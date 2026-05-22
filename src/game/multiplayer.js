@@ -42,7 +42,7 @@ export function getPlayerName() { return _playerName }
 export function getPlayerUUID() { return _playerUUID }
 
 const LOCAL_ROOMS_KEY = 'snake-local-rooms'
-const ROOM_TTL = 120000
+const ROOM_TTL = 15000
 
 function getLocalRoomsRaw() {
   try {
@@ -135,13 +135,13 @@ export function startLobby() {
         const now = Date.now()
         let changed = false
         for (const [key, room] of rooms) {
-          if (now - (room.lastPing || room.joinedAt) > 8000) {
+          if (now - (room.lastPing || room.joinedAt) > 5000) {
             rooms.delete(key)
             changed = true
           }
         }
         if (changed) broadcastRooms()
-      }, 5000)
+      }, 2000)
       resolve()
     })
     _lobbyPeer.on('error', (err) => {
@@ -178,7 +178,7 @@ export function startLobby() {
           case 'list':
             c.send({
               type: 'room_list',
-              rooms: Array.from(rooms.values()).filter(r => Date.now() - (r.lastPing || r.joinedAt) <= 8000)
+              rooms: Array.from(rooms.values()).filter(r => Date.now() - (r.lastPing || r.joinedAt) <= 5000 && (r.memberCount || 1) > 0)
             })
             break
           case 'ping':
@@ -246,26 +246,36 @@ export function unregisterFromLobby() {
 }
 
 export function fetchRooms() {
-  const local = fetchLocalRooms()
-  if (local.length > 0) return Promise.resolve(local)
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
+    const local = fetchLocalRooms()
     const p = new Peer()
+    const timeout = setTimeout(() => {
+      p.destroy()
+      resolve(local)
+    }, 3000)
     p.on('open', () => {
       const c = p.connect(LOBBY_ID, { reliable: true })
       c.on('open', () => {
         c.send({ type: 'list' })
         c.on('data', (data) => {
           if (data.type === 'room_list') {
+            clearTimeout(timeout)
             c.close()
             p.destroy()
             resolve(data.rooms)
           }
         })
       })
-      c.on('error', () => { p.destroy(); reject(new Error('Lobby unavailable')) })
-      setTimeout(() => { p.destroy(); reject(new Error('Lobby timeout')) }, 5000)
+      c.on('error', () => {
+        clearTimeout(timeout)
+        p.destroy()
+        resolve(local)
+      })
     })
-    p.on('error', () => reject(new Error('Failed to connect')))
+    p.on('error', () => {
+      clearTimeout(timeout)
+      resolve(local)
+    })
   })
 }
 

@@ -79,7 +79,7 @@ function send() {
   position: fixed;
   right: 0;
   bottom: 12px;
-  width: clamp(280px, 26vw, 380px);
+  width: clamp(320px, 30vw, 480px);
   background: rgba(15, 15, 35, 0.95);
   border: 1px solid rgba(78, 205, 196, 0.2);
   border-right: none;
@@ -90,7 +90,7 @@ function send() {
   transition: width 0.3s ease, padding 0.3s ease, bottom 0.3s ease;
   overflow: hidden;
   z-index: 100;
-  max-height: 400px;
+  max-height: 50vh;
 }
 .chat-panel-wrapper.collapsed {
   width: 40px;
