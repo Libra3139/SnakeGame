@@ -207,6 +207,7 @@ function stopLobby() {
             @click="joinPeerRoom(room.peerId)"
           >
             <span class="mp-room-name">{{ room.playerName || room.name }}</span>
+            <span class="mp-room-members">{{ room.memberCount || '?' }} in room</span>
             <span class="mp-room-id-text">{{ room.peerId.slice(0, 12) }}...</span>
             <span class="mp-room-join-hint">Join →</span>
           </div>
@@ -548,6 +549,12 @@ function stopLobby() {
   font-weight: 600;
   font-size: 0.9rem;
   color: #4ecdc4;
+}
+
+.mp-room-members {
+  font-size: 0.7rem;
+  color: #888;
+  margin-left: 4px;
 }
 
 .mp-room-id-text {

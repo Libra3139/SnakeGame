@@ -42,7 +42,7 @@ export function getPlayerName() { return _playerName }
 export function getPlayerUUID() { return _playerUUID }
 
 const LOCAL_ROOMS_KEY = 'snake-local-rooms'
-const ROOM_TTL = 30000
+const ROOM_TTL = 120000
 
 function getLocalRoomsRaw() {
   try {
@@ -61,9 +61,33 @@ export function registerLocalRoom(hostPeerId) {
     peerId: hostPeerId,
     playerName: _playerName,
     playerUUID: _playerUUID,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    memberCount: 1,
   })
   saveLocalRooms(rooms)
+}
+
+export function incrementRoomMembers(roomId) {
+  const rooms = getLocalRoomsRaw()
+  const room = rooms.get(roomId)
+  if (room) {
+    room.memberCount = (room.memberCount || 1) + 1
+    room.timestamp = Date.now()
+    saveLocalRooms(rooms)
+  }
+}
+
+export function decrementRoomMembers(roomId) {
+  const rooms = getLocalRoomsRaw()
+  const room = rooms.get(roomId)
+  if (room) {
+    room.memberCount = (room.memberCount || 1) - 1
+    room.timestamp = Date.now()
+    if (room.memberCount <= 0) {
+      rooms.delete(roomId)
+    }
+    saveLocalRooms(rooms)
+  }
 }
 
 export function unregisterLocalRoom(roomId) {
@@ -130,7 +154,8 @@ export function startLobby() {
               name: data.name || 'Snake Game',
               joinedAt: Date.now(),
               lastPing: Date.now(),
-              connPeer: c.peer
+              connPeer: c.peer,
+              memberCount: data.memberCount || 1,
             })
             c.send({ type: 'registered', ok: true })
             broadcastRooms()
@@ -183,7 +208,7 @@ export function registerWithLobby(hostPeerId) {
     p.on('open', () => {
       const c = p.connect(LOBBY_ID, { reliable: true })
       c.on('open', () => {
-        c.send({ type: 'register', peerId: hostPeerId, name: 'Snake Game' })
+        c.send({ type: 'register', peerId: hostPeerId, name: 'Snake Game', memberCount: 1 })
         _lobbyConn = { conn: c, peer: p }
         _lobbyHeartbeat = setInterval(() => {
           try { c.send({ type: 'ping' }) } catch {}
@@ -245,11 +270,13 @@ export function createRoom() {
       resolve(id)
       peer.on('connection', (connection) => {
         conn = connection
+        incrementRoomMembers(id)
         conn.on('data', (data) => {
           if (_onDataCb) _onDataCb(data)
           else _pendingData.push(data)
         })
         conn.on('close', () => {
+          decrementRoomMembers(_myPeerId)
           if (_onDisconnectCb) _onDisconnectCb()
         })
         if (_onConnCb) _onConnCb()
@@ -314,7 +341,7 @@ export function onConnection(cb) {
 export function disconnect() {
   if (conn) { conn.close(); conn = null }
   if (peer) { peer.destroy(); peer = null }
-  if (_myPeerId) unregisterLocalRoom(_myPeerId)
+  if (_myPeerId) decrementRoomMembers(_myPeerId)
   _isHost = false
   _myPeerId = null
   _onDataCb = null
