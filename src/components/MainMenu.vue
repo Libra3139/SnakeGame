@@ -15,6 +15,8 @@ const roomList = ref([])
 const activePlayers = ref([])
 const fetchingRooms = ref(false)
 const playerListCollapsed = ref(false)
+const lobbyStarted = ref(false)
+const lobbyOnline = ref(false)
 
 let _roomListTimer = null
 let _roomPingTimer = null
@@ -52,13 +54,38 @@ onUnmounted(() => {
 
 async function refreshRoomList() {
   fetchingRooms.value = true
-  const rooms = await multiplayer.fetchRooms()
-  roomList.value = rooms
+  try {
+    const rooms = await multiplayer.fetchRooms()
+    roomList.value = rooms
+    lobbyOnline.value = true
+  } catch {
+    roomList.value = []
+    lobbyOnline.value = false
+  }
   fetchingRooms.value = false
 }
 
 function refreshActivePlayers() {
   activePlayers.value = multiplayer.fetchActivePlayers()
+}
+
+async function toggleLobby() {
+  if (lobbyStarted.value) {
+    multiplayer.stopLobby()
+    lobbyStarted.value = false
+    return
+  }
+  try {
+    await multiplayer.startLobby()
+    multiplayer.onRoomList((rooms) => {
+      roomList.value = rooms
+    })
+    lobbyStarted.value = true
+    lobbyOnline.value = true
+    roomList.value = []
+  } catch {
+    error.value = 'Failed to start lobby'
+  }
 }
 
 async function createRoom() {
@@ -68,6 +95,9 @@ async function createRoom() {
   try {
     const id = await multiplayer.createRoom()
     myPeerId.value = id
+    try {
+      await multiplayer.registerWithLobby(id)
+    } catch {}
     emit('startMultiplayerHost')
   } catch (e) {
     error.value = 'Failed to create room: ' + e.message
@@ -151,9 +181,23 @@ function stopLobby() {
 
       <div class="mp-room-list">
         <div v-if="fetchingRooms" class="mp-status">Searching for rooms...</div>
+        <div v-else-if="!lobbyOnline" class="mp-lobby-offline">
+          <p>No rooms available</p>
+          <p class="mp-hint">Start the lobby to allow room discovery, or share your Room ID directly</p>
+          <button
+            v-if="!lobbyStarted"
+            @click="toggleLobby"
+            class="btn mp-btn mp-btn-small"
+          >Start Lobby Server</button>
+          <button
+            v-else
+            @click="toggleLobby"
+            class="btn mp-btn mp-btn-small mp-btn-danger"
+          >Stop Lobby Server</button>
+        </div>
         <div v-else-if="roomList.length === 0" class="mp-no-rooms">
           <p>No rooms available</p>
-          <p class="mp-hint">Create a room to appear here, or enter a Room ID manually</p>
+          <p class="mp-hint">Create a room to appear here</p>
         </div>
         <div v-else class="mp-rooms">
           <div
@@ -162,16 +206,21 @@ function stopLobby() {
             class="mp-room-item"
             @click="joinPeerRoom(room.peerId)"
           >
-            <span class="mp-room-name">{{ room.playerName }}</span>
+            <span class="mp-room-name">{{ room.playerName || room.name }}</span>
             <span class="mp-room-id-text">{{ room.peerId.slice(0, 12) }}...</span>
             <span class="mp-room-join-hint">Join →</span>
           </div>
         </div>
         <button
+          v-if="lobbyOnline"
           @click="refreshRoomList"
           class="btn mp-btn mp-btn-small mp-btn-refresh"
           :disabled="fetchingRooms"
         >Refresh</button>
+      </div>
+
+      <div v-if="lobbyStarted" class="mp-lobby-badge">
+        Lobby Server Running
       </div>
 
       <div v-if="connecting" class="mp-status">Connecting...</div>
@@ -396,12 +445,6 @@ function stopLobby() {
 .mp-room-id strong {
   color: #4ecdc4;
   font-size: 1.1rem;
-  letter-spacing: 1px;
-}
-
-.mp-room-id .ip-text {
-  color: #ffd700;
-  font-size: 1rem;
   letter-spacing: 1px;
 }
 
