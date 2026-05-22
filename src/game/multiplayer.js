@@ -8,6 +8,7 @@ let _onDataCb = null
 let _onDisconnectCb = null
 let _onConnCb = null
 let _pendingData = []
+let _pendingConn = false
 
 const LOBBY_ID = 'snake-lobby'
 let _lobbyPeer = null
@@ -24,14 +25,29 @@ export function startLobby() {
     })
     _lobbyPeer.on('connection', (c) => {
       c.on('data', (data) => {
-        if (data.type === 'register') {
-          rooms.set(c.peer, {
-            peerId: c.peer,
-            name: data.name || 'Snake Game',
-            joinedAt: Date.now()
-          })
-          c.send({ type: 'registered', ok: true })
-          broadcastRooms()
+        switch (data.type) {
+          case 'register':
+            rooms.set(data.peerId || c.peer, {
+              peerId: data.peerId || c.peer,
+              name: data.name || 'Snake Game',
+              joinedAt: Date.now()
+            })
+            c.send({ type: 'registered', ok: true })
+            broadcastRooms()
+            break
+          case 'unregister':
+            rooms.delete(c.peer)
+            broadcastRooms()
+            break
+          case 'list':
+            c.send({
+              type: 'room_list',
+              rooms: Array.from(rooms.values())
+            })
+            break
+          case 'ping':
+            c.send({ type: 'pong' })
+            break
         }
       })
       c.on('close', () => {
@@ -45,14 +61,6 @@ const rooms = new Map()
 
 function broadcastRooms() {
   const list = Array.from(rooms.values())
-  for (const [peerId] of rooms) {
-    const conns = _lobbyPeer?.connections[peerId]
-    if (conns) {
-      for (const c of conns) {
-        try { c.send({ type: 'room_list', rooms: list }) } catch {}
-      }
-    }
-  }
   if (_onRoomListCb) _onRoomListCb(list)
 }
 
@@ -68,7 +76,7 @@ export function registerWithLobby(hostPeerId) {
     p.on('open', () => {
       const c = p.connect(LOBBY_ID, { reliable: true })
       c.on('open', () => {
-        c.send({ type: 'register', name: 'Snake Game' })
+        c.send({ type: 'register', peerId: hostPeerId, name: 'Snake Game' })
         _lobbyConn = { conn: c, peer: p }
         resolve()
       })
@@ -130,7 +138,8 @@ export function createRoom() {
         conn.on('close', () => {
           if (_onDisconnectCb) _onDisconnectCb()
         })
-        if (_onConnCb) _onConnCb()
+        if (_onConnCb) { _onConnCb() }
+        else { _pendingConn = true }
       })
     })
     peer.on('error', (err) => reject(err))
@@ -182,6 +191,10 @@ export function onDisconnect(cb) {
 
 export function onConnection(cb) {
   _onConnCb = cb
+  if (_pendingConn) {
+    _pendingConn = false
+    cb()
+  }
 }
 
 export function disconnect() {
@@ -193,6 +206,7 @@ export function disconnect() {
   _onDisconnectCb = null
   _onConnCb = null
   _pendingData = []
+  _pendingConn = false
   try { unregisterFromLobby() } catch {}
 }
 

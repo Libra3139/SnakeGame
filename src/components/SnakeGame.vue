@@ -18,6 +18,12 @@ const peerId = ref('')
 const myReady = ref(false)
 const opponentReady = ref(false)
 const countdownValue = ref(5)
+const matchScore = ref(0)
+const opponentMatchScore = ref(0)
+const currentRound = ref(1)
+const rematchRequested = ref(false)
+const opponentRematch = ref(false)
+const WIN_SCORE = 5
 let countdownTimer = null
 
 
@@ -895,9 +901,9 @@ function mpUpdate() {
   const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y }
 
   const gs = GRID_SIZE.value
-  if (head.x < 0 || head.x >= gs || head.y < 0 || head.y >= gs) { mpEndGame(1 - playerIndex.value); return }
-  if (snake.some(seg => seg.x === head.x && seg.y === head.y)) { mpEndGame(1 - playerIndex.value); return }
-  if (obstacles.some(o => o.x === head.x && o.y === head.y)) { mpEndGame(1 - playerIndex.value); return }
+  if (head.x < 0 || head.x >= gs || head.y < 0 || head.y >= gs) { endMpRound(1 - playerIndex.value); return }
+  if (snake.some(seg => seg.x === head.x && seg.y === head.y)) { endMpRound(1 - playerIndex.value); return }
+  if (obstacles.some(o => o.x === head.x && o.y === head.y)) { endMpRound(1 - playerIndex.value); return }
 
   snake.unshift(head)
 
@@ -926,19 +932,92 @@ function mpUpdate() {
   })
 }
 
-function mpEndGame(winner) {
-  gameWinner = winner
-  gameStatus.value = "gameover"
+function endMpRound(winner) {
   if (animFrameId) cancelAnimationFrame(animFrameId)
   animFrameId = null
   accumulator = 0
   lastTime = 0
+
+  if (winner === playerIndex.value) matchScore.value++
+  else opponentMatchScore.value++
+
   multiplayer.send({
-    type: 'game_over',
+    type: 'round_result',
     winner,
-    myScore: score.value,
-    opponentScore,
+    matchScore: matchScore.value,
+    opponentMatchScore: opponentMatchScore.value,
+    round: currentRound.value,
   })
+
+  if (matchScore.value >= WIN_SCORE || opponentMatchScore.value >= WIN_SCORE) {
+    endMpMatch(winner)
+  } else {
+    currentRound.value++
+    gameStatus.value = 'ready'
+    myReady.value = false
+    opponentReady.value = false
+    resetMpRound()
+    draw()
+  }
+}
+
+function endMpMatch(winner) {
+  gameWinner = winner
+  myReady.value = false
+  opponentReady.value = false
+  gameStatus.value = 'match_over'
+  draw()
+}
+
+function resetMpRound() {
+  const gs = GRID_SIZE.value
+  snake = [
+    { x: Math.floor(gs / 4), y: Math.floor(gs / 2) },
+    { x: Math.floor(gs / 4) - 1, y: Math.floor(gs / 2) },
+    { x: Math.floor(gs / 4) - 2, y: Math.floor(gs / 2) },
+  ]
+  direction = { x: 1, y: 0 }
+  nextDirection = { x: 1, y: 0 }
+  inputQueue = []
+  foods = []
+  obstaclesActive = false
+  score.value = 0
+  opponentScore = 0
+  opponentSnake = [
+    { x: Math.floor(gs / 4), y: Math.floor(gs / 2) },
+    { x: Math.floor(gs / 4) - 1, y: Math.floor(gs / 2) },
+    { x: Math.floor(gs / 4) - 2, y: Math.floor(gs / 2) },
+  ]
+  opponentDirection = { x: 1, y: 0 }
+  opponentFoods = []
+  opponentAlive = true
+  opponentPrevSnake = []
+  gameWinner = null
+  if (props.mode === 'host') { generateObstacles() }
+  placeFood()
+  draw()
+}
+
+function requestRematch() {
+  rematchRequested.value = true
+  multiplayer.send({ type: 'rematch' })
+}
+
+function acceptRematch() {
+  multiplayer.send({ type: 'rematch_accept' })
+  startNewMatch()
+}
+
+function startNewMatch() {
+  matchScore.value = 0
+  opponentMatchScore.value = 0
+  currentRound.value = 1
+  rematchRequested.value = false
+  opponentRematch.value = false
+  myReady.value = false
+  opponentReady.value = false
+  resetMpRound()
+  gameStatus.value = 'ready'
   draw()
 }
 
@@ -1113,17 +1192,19 @@ function setupMultiplayer() {
       opponentScore = data.score
       opponentFoods = data.foods.map(f => ({...f}))
       opponentAlive = data.alive
-    } else if (data.type === 'game_over') {
-      if (gameStatus.value === 'playing') {
+    } else if (data.type === 'round_result') {
+      matchScore.value = data.opponentMatchScore
+      opponentMatchScore.value = data.matchScore
+      currentRound.value = (data.round || 0) + 1
+      if (matchScore.value >= WIN_SCORE || opponentMatchScore.value >= WIN_SCORE) {
         gameWinner = data.winner
-        gameStatus.value = 'gameover'
-        opponentScore = data.myScore
-        score.value = data.opponentScore
-        if (animFrameId) cancelAnimationFrame(animFrameId)
-        animFrameId = null
-        accumulator = 0
-        lastTime = 0
+        gameStatus.value = 'match_over'
         draw()
+      } else {
+        gameStatus.value = 'ready'
+        myReady.value = false
+        opponentReady.value = false
+        resetMpRound()
       }
     } else if (data.type === 'ready') {
       opponentReady.value = true
@@ -1131,11 +1212,21 @@ function setupMultiplayer() {
       draw()
     } else if (data.type === 'countdown_start') {
       startCountdown(data.count)
+    } else if (data.type === 'rematch') {
+      opponentRematch.value = true
+      if (rematchRequested.value) {
+        multiplayer.send({ type: 'rematch_accept' })
+        startNewMatch()
+      } else {
+        draw()
+      }
+    } else if (data.type === 'rematch_accept') {
+      startNewMatch()
     }
   })
 
   multiplayer.onDisconnect(() => {
-    if (gameStatus.value === 'playing' || gameStatus.value === 'ready' || gameStatus.value === 'countdown') {
+    if (gameStatus.value === 'playing' || gameStatus.value === 'ready' || gameStatus.value === 'countdown' || gameStatus.value === 'match_over') {
       gameWinner = 1 - playerIndex.value
       gameStatus.value = 'gameover'
       if (countdownTimer) clearInterval(countdownTimer)
@@ -1278,7 +1369,12 @@ onUnmounted(() => {
           </div>
           <div v-if="gameStatus === 'ready'" class="overlay">
             <div class="ready-content">
-              <p class="ready-title">Opponent Connected!</p>
+              <p class="ready-title">{{ currentRound === 1 ? 'Opponent Connected!' : 'Round ' + currentRound }}</p>
+              <div class="match-scores-bar">
+                <span class="msb-item p1-color">{{ matchScore }}</span>
+                <span class="msb-divider">:</span>
+                <span class="msb-item p2-color">{{ opponentMatchScore }}</span>
+              </div>
               <div class="ready-players">
                 <div class="ready-player" :class="{ 'ready-done': myReady }">
                   <span class="ready-icon">{{ myReady ? '✓' : '⋯' }}</span>
@@ -1298,6 +1394,40 @@ onUnmounted(() => {
             <div class="countdown-content">
               <p class="countdown-number">{{ countdownValue }}</p>
               <p class="countdown-label">Get Ready!</p>
+            </div>
+          </div>
+          <div v-if="gameStatus === 'match_over'" class="overlay">
+            <div class="match-over-content">
+              <p class="match-over-title">{{ gameWinner === playerIndex.value ? 'YOU WIN!' : 'YOU LOSE' }}</p>
+              <p class="match-over-subtitle">First to {{ WIN_SCORE }} wins</p>
+              <div class="match-scores">
+                <div class="match-score-item">
+                  <span class="match-score-label">You</span>
+                  <span class="match-score-value p1-color">{{ matchScore }}</span>
+                </div>
+                <span class="match-score-divider">-</span>
+                <div class="match-score-item">
+                  <span class="match-score-label">Opponent</span>
+                  <span class="match-score-value p2-color">{{ opponentMatchScore }}</span>
+                </div>
+              </div>
+              <div class="match-rematch">
+                <button v-if="!rematchRequested && !opponentRematch" @click="requestRematch" class="btn btn-primary match-rematch-btn">Rematch</button>
+                <div v-else-if="rematchRequested && !opponentRematch" class="rematch-status">
+                  <p>Waiting for opponent...</p>
+                  <button @click="$emit('back')" class="btn btn-danger">Quit</button>
+                </div>
+                <div v-else-if="opponentRematch && !rematchRequested" class="rematch-status">
+                  <p>Opponent wants a rematch!</p>
+                  <div class="rematch-actions">
+                    <button @click="acceptRematch" class="btn btn-primary">Accept</button>
+                    <button @click="$emit('back')" class="btn btn-danger">Quit</button>
+                  </div>
+                </div>
+                <div v-else class="rematch-status">
+                  <p>Starting rematch...</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1877,8 +2007,105 @@ canvas {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   padding: 20px;
+}
+
+.match-scores-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.8rem;
+  font-weight: 900;
+}
+
+.msb-item {
+  font-size: 2rem;
+}
+
+.msb-divider {
+  color: #555;
+  font-size: 1.5rem;
+}
+
+.match-over-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 30px;
+}
+
+.match-over-title {
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #ffd700;
+  text-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+}
+
+.match-over-subtitle {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.match-scores {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 16px 30px;
+  border-radius: 12px;
+}
+
+.match-score-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-score-label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.match-score-value {
+  font-size: 2.5rem;
+  font-weight: 900;
+}
+
+.match-score-divider {
+  color: #444;
+  font-size: 2rem;
+  font-weight: 300;
+}
+
+.match-rematch {
+  margin-top: 8px;
+}
+
+.match-rematch-btn {
+  padding: 14px 50px;
+  font-size: 1.1rem;
+}
+
+.rematch-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.rematch-status p {
+  color: #aaa;
+  font-size: 0.95rem;
+}
+
+.rematch-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .ready-title {
