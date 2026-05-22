@@ -30,6 +30,9 @@ export function getPlayerUUID() { return _playerUUID }
 const LOCAL_ROOMS_KEY = 'snake-local-rooms'
 const ROOM_TTL = 30000
 
+const PLAYER_PRESENCE_KEY = 'snake-player-presence'
+const PRESENCE_TTL = 15000
+
 function getLocalRoomsRaw() {
   try {
     const data = localStorage.getItem(LOCAL_ROOMS_KEY)
@@ -74,6 +77,54 @@ export function fetchLocalRooms() {
   for (const [, room] of rooms) {
     if (now - room.timestamp < ROOM_TTL) {
       valid.push({ ...room })
+    }
+  }
+  return valid
+}
+
+function getPlayerPresenceRaw() {
+  try {
+    const data = localStorage.getItem(PLAYER_PRESENCE_KEY)
+    return data ? new Map(JSON.parse(data)) : new Map()
+  } catch { return new Map() }
+}
+
+function savePlayerPresence(map) {
+  localStorage.setItem(PLAYER_PRESENCE_KEY, JSON.stringify(Array.from(map.entries())))
+}
+
+export function registerPlayerPresence() {
+  const presences = getPlayerPresenceRaw()
+  presences.set(_playerUUID, {
+    playerUUID: _playerUUID,
+    playerName: _playerName,
+    timestamp: Date.now()
+  })
+  savePlayerPresence(presences)
+}
+
+export function unregisterPlayerPresence() {
+  const presences = getPlayerPresenceRaw()
+  presences.delete(_playerUUID)
+  savePlayerPresence(presences)
+}
+
+export function updatePlayerPresencePing() {
+  const presences = getPlayerPresenceRaw()
+  const entry = presences.get(_playerUUID)
+  if (entry) {
+    entry.timestamp = Date.now()
+    savePlayerPresence(presences)
+  }
+}
+
+export function fetchActivePlayers() {
+  const presences = getPlayerPresenceRaw()
+  const now = Date.now()
+  const valid = []
+  for (const [, p] of presences) {
+    if (now - p.timestamp < PRESENCE_TTL) {
+      valid.push({ ...p })
     }
   }
   return valid

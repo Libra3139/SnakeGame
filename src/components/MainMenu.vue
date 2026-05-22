@@ -12,11 +12,13 @@ const connecting = ref(false)
 const error = ref('')
 const lobbyMode = ref('')
 const roomList = ref([])
+const activePlayers = ref([])
 const fetchingRooms = ref(false)
 const playerListCollapsed = ref(false)
 
 let _roomListTimer = null
 let _roomPingTimer = null
+let _presenceTimer = null
 
 watch(showMultiplayer, (val) => {
   clearInterval(_roomListTimer)
@@ -33,11 +35,19 @@ watch(showMultiplayer, (val) => {
 onMounted(() => {
   const identity = multiplayer.generateIdentity()
   playerName.value = identity.name
+  multiplayer.registerPlayerPresence()
+  refreshActivePlayers()
+  _presenceTimer = setInterval(() => {
+    multiplayer.updatePlayerPresencePing()
+    refreshActivePlayers()
+  }, 5000)
 })
 
 onUnmounted(() => {
   clearInterval(_roomListTimer)
   clearInterval(_roomPingTimer)
+  clearInterval(_presenceTimer)
+  multiplayer.unregisterPlayerPresence()
 })
 
 async function refreshRoomList() {
@@ -45,6 +55,10 @@ async function refreshRoomList() {
   const rooms = await multiplayer.fetchRooms()
   roomList.value = rooms
   fetchingRooms.value = false
+}
+
+function refreshActivePlayers() {
+  activePlayers.value = multiplayer.fetchActivePlayers()
 }
 
 async function createRoom() {
@@ -181,11 +195,13 @@ function stopLobby() {
           <span class="mm-pl-name">{{ playerName }}</span>
           <span class="mm-pl-tag">You</span>
         </div>
-        <div v-for="room in roomList" :key="room.playerUUID" class="mm-pl-item mm-pl-other">
-          <span class="mm-pl-dot"></span>
-          <span class="mm-pl-name">{{ room.playerName }}</span>
-        </div>
-        <div v-if="roomList.length === 0 && showMultiplayer" class="mm-pl-item mm-pl-empty">
+        <template v-for="p in activePlayers" :key="p.playerUUID">
+          <div v-if="p.playerName !== playerName" class="mm-pl-item mm-pl-other">
+            <span class="mm-pl-dot"></span>
+            <span class="mm-pl-name">{{ p.playerName }}</span>
+          </div>
+        </template>
+        <div v-if="activePlayers.length <= 1" class="mm-pl-item mm-pl-empty">
           <span class="mm-pl-name">No other players</span>
         </div>
       </div>
