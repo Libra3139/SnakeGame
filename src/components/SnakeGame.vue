@@ -1004,13 +1004,13 @@ function mpUpdate() {
   let hostAlive = true
   let guestAlive = true
 
-  if (hostHead.x < 0 || hostHead.x >= gs || hostHead.y < 0 || hostHead.y >= gs) hostAlive = false
-  else if (snake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) hostAlive = false
-  else if (myObstacles.some(o => o.x === hostHead.x && o.y === hostHead.y)) hostAlive = false
+  if (hostHead.x < 0 || hostHead.x >= gs || hostHead.y < 0 || hostHead.y >= gs) { hostAlive = false }
+  else if (snake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) { hostAlive = false }
+  else if (myObstacles.some(o => o.x === hostHead.x && o.y === hostHead.y)) { hostAlive = false }
 
-  if (guestHead.x < 0 || guestHead.x >= gs || guestHead.y < 0 || guestHead.y >= gs) guestAlive = false
-  else if (opponentSnake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) guestAlive = false
-  else if (opponentObstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) guestAlive = false
+  if (guestHead.x < 0 || guestHead.x >= gs || guestHead.y < 0 || guestHead.y >= gs) { guestAlive = false }
+  else if (opponentSnake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) { guestAlive = false }
+  else if (opponentObstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) { guestAlive = false }
 
   if (hostHead.x === guestHead.x && hostHead.y === guestHead.y) {
     hostAlive = false
@@ -1218,9 +1218,9 @@ function mpHostGameLoop(timestamp) {
   accumulator += delta
   while (accumulator >= gameInterval.value) {
     try { mpUpdate() } catch (e) {
-      console.error('mpUpdate error:', e)
-      endMpRound(playerIndex.value)
-      return
+      console.error('mpUpdate error (skipping tick):', e)
+      accumulator -= gameInterval.value
+      continue
     }
     if (gameStatus.value !== "playing") return
     accumulator -= gameInterval.value

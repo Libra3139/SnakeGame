@@ -647,7 +647,7 @@ export function sendChatMessage(sender, text) {
   const msgs = getChatMessages()
   const msg = { sender, text, time: Date.now(), id: Date.now() + Math.random() }
   msgs.push(msg)
-  if (msgs.length > 100) msgs.splice(0, msgs.length - 100)
+  if (msgs.length > 20) msgs.splice(0, msgs.length - 20)
   localStorage.setItem(CHAT_KEY, JSON.stringify(msgs))
   localStorage.setItem('snake-chat-ts', Date.now().toString())
   return msg
