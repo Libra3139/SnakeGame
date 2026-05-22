@@ -268,7 +268,7 @@ function stopLobby() {
   background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
   color: #ffffff;
   gap: 10px;
-  padding: 20px;
+  padding: 0;
   position: relative;
 }
 

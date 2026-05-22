@@ -1790,7 +1790,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 15px;
-  padding: 20px;
+  padding: 0;
   background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
   min-height: 100vh;
   color: #ffffff;
