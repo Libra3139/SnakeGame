@@ -14,11 +14,26 @@ const LOBBY_ID = 'snake-lobby'
 let _lobbyPeer = null
 let _lobbyConn = null
 let _onRoomListCb = null
+let _lobbyCleanupTimer = null
+let _lobbyHeartbeat = null
 
 export function startLobby() {
   return new Promise((resolve, reject) => {
     _lobbyPeer = new Peer(LOBBY_ID)
-    _lobbyPeer.on('open', () => resolve())
+    _lobbyPeer.on('open', () => {
+      _lobbyCleanupTimer = setInterval(() => {
+        const now = Date.now()
+        let changed = false
+        for (const [key, room] of rooms) {
+          if (now - (room.lastPing || room.joinedAt) > 15000) {
+            rooms.delete(key)
+            changed = true
+          }
+        }
+        if (changed) broadcastRooms()
+      }, 10000)
+      resolve()
+    })
     _lobbyPeer.on('error', (err) => {
       _lobbyPeer = null
       reject(err)
@@ -30,7 +45,8 @@ export function startLobby() {
             rooms.set(data.peerId || c.peer, {
               peerId: data.peerId || c.peer,
               name: data.name || 'Snake Game',
-              joinedAt: Date.now()
+              joinedAt: Date.now(),
+              lastPing: Date.now()
             })
             c.send({ type: 'registered', ok: true })
             broadcastRooms()
@@ -42,10 +58,12 @@ export function startLobby() {
           case 'list':
             c.send({
               type: 'room_list',
-              rooms: Array.from(rooms.values())
+              rooms: Array.from(rooms.values()).filter(r => Date.now() - (r.lastPing || r.joinedAt) <= 15000)
             })
             break
           case 'ping':
+            const room = rooms.get(c.peer)
+            if (room) room.lastPing = Date.now()
             c.send({ type: 'pong' })
             break
         }
@@ -57,16 +75,17 @@ export function startLobby() {
   })
 }
 
+export function stopLobby() {
+  if (_lobbyCleanupTimer) { clearInterval(_lobbyCleanupTimer); _lobbyCleanupTimer = null }
+  if (_lobbyPeer) { _lobbyPeer.destroy(); _lobbyPeer = null }
+  rooms.clear()
+}
+
 const rooms = new Map()
 
 function broadcastRooms() {
   const list = Array.from(rooms.values())
   if (_onRoomListCb) _onRoomListCb(list)
-}
-
-export function stopLobby() {
-  if (_lobbyPeer) { _lobbyPeer.destroy(); _lobbyPeer = null }
-  rooms.clear()
 }
 
 export function registerWithLobby(hostPeerId) {
@@ -78,6 +97,9 @@ export function registerWithLobby(hostPeerId) {
       c.on('open', () => {
         c.send({ type: 'register', peerId: hostPeerId, name: 'Snake Game' })
         _lobbyConn = { conn: c, peer: p }
+        _lobbyHeartbeat = setInterval(() => {
+          try { c.send({ type: 'ping' }) } catch {}
+        }, 5000)
         resolve()
       })
       c.on('error', () => { p.destroy(); reject(new Error('Lobby unavailable')) })
@@ -88,6 +110,7 @@ export function registerWithLobby(hostPeerId) {
 }
 
 export function unregisterFromLobby() {
+  if (_lobbyHeartbeat) { clearInterval(_lobbyHeartbeat); _lobbyHeartbeat = null }
   if (_lobbyConn) {
     try { _lobbyConn.conn.send({ type: 'unregister' }) } catch {}
     _lobbyConn.conn.close()

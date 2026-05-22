@@ -1364,6 +1364,7 @@ onMounted(() => {
     loadQTable()
     loadLeaderboard()
     window.addEventListener("keydown", handleKeydown)
+    window.addEventListener("beforeunload", multiplayer.disconnect)
     if (props.mode === 'host') {
       peerId.value = multiplayer.myPeerId()
     }
@@ -1380,6 +1381,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown)
+  window.removeEventListener("beforeunload", multiplayer.disconnect)
   if (animFrameId) cancelAnimationFrame(animFrameId)
   if (countdownTimer) clearInterval(countdownTimer)
   if (isMultiplayer.value) {
