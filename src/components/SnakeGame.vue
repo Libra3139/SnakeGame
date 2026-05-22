@@ -83,7 +83,6 @@ function sp(index) {
 
 let opponentSnake = []
 let opponentDirection = { x: 1, y: 0 }
-let opponentFoods = []
 let opponentScore = 0
 let opponentAlive = true
 let opponentPrevSnake = []
@@ -399,11 +398,8 @@ function initGame() {
       { x: Math.floor(3 * gs / 4) + 2, y: Math.floor(gs / 2) },
     ]
     opponentDirection = { x: -1, y: 0 }
-    opponentFoods = []
-    opponentScore = 0
     opponentAlive = true
     opponentPrevSnake = []
-    gameWinner = null
 
     obstacles = []
     if (props.mode === 'host') {
@@ -543,7 +539,7 @@ function draw(alpha) {
   if (isMultiplayer.value) {
     drawBoard(ctx, 0, snake, direction, foods, obstacles, `You (P${playerIndex.value + 1})`,
       { start: { r: 78, g: 205, b: 196 }, end: { r: 26, g: 107, b: 101 } })
-    drawBoard(ctx, CANVAS_SIZE + 10, opponentSnake, opponentDirection, opponentFoods, obstacles, 'Opponent',
+    drawBoard(ctx, CANVAS_SIZE + 10, opponentSnake, opponentDirection, foods, obstacles, 'Opponent',
       { start: { r: 255, g: 107, b: 179 }, end: { r: 180, g: 40, b: 110 } })
 
     const mw = CANVAS_SIZE * 2 + 10
@@ -1079,7 +1075,6 @@ function resetMpRound() {
     { x: Math.floor(3 * gs / 4) + 2, y: Math.floor(gs / 2) },
   ]
   opponentDirection = { x: -1, y: 0 }
-  opponentFoods = []
   opponentAlive = true
   opponentPrevSnake = []
   gameWinner = null
