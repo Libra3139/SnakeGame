@@ -258,11 +258,30 @@ function addScoreToLeaderboard(newScore) {
   saveLeaderboard()
 }
 
+function syncSettingsToGuest() {
+  if (props.mode === 'host' && gameStatus.value === 'ready') {
+    multiplayer.send({
+      type: 'obstacle_layout',
+      obstacles: obstacles.map(o => ({...o})),
+      boardSize: boardSize.value,
+      difficulty: difficulty.value,
+      enableObstacles: enableObstacles.value,
+      gameMode: gameMode.value,
+      gridSize: GRID_SIZE.value,
+    })
+  }
+}
+
 watch(difficulty, (newVal) => {
   const opt = difficultyOptions.find(o => o.value === newVal)
   if (opt) {
     moveSpeed.value = opt.speed
     enableObstacles.value = opt.obstacles
+  }
+  if (isMultiplayer.value && props.mode === 'host') {
+    initGame()
+    draw()
+    syncSettingsToGuest()
   }
 })
 
@@ -276,6 +295,7 @@ watch(gameMode, () => {
     initGame()
     draw()
     if (gameMode.value === "auto") startGame()
+    syncSettingsToGuest()
   }
 })
 
@@ -289,6 +309,15 @@ watch(boardSize, () => {
     initGame()
     draw()
     if (gameMode.value === "auto") startGame()
+    syncSettingsToGuest()
+  }
+})
+
+watch(enableObstacles, () => {
+  if (isMultiplayer.value && props.mode === 'host') {
+    initGame()
+    draw()
+    syncSettingsToGuest()
   }
 })
 
@@ -1555,7 +1584,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="!isMultiplayer || (props.mode === 'host' && gameStatus === 'waiting')" class="settings-panel">
+      <div v-if="!isMultiplayer || (props.mode === 'host' && gameStatus === 'waiting') || gameStatus === 'ready'" class="settings-panel">
         <h3>Settings</h3>
         <div class="setting-group">
           <label>Board Size</label>
@@ -1563,6 +1592,7 @@ onUnmounted(() => {
             <button
               v-for="opt in boardSizeOptions"
               :key="opt.value"
+              :disabled="props.mode === 'guest'"
               @click="boardSize = opt.value"
               :class="['btn', 'btn-small', { active: boardSize === opt.value }]"
             >
@@ -1576,6 +1606,7 @@ onUnmounted(() => {
             <button
               v-for="opt in gameModeOptions"
               :key="opt.value"
+              :disabled="props.mode === 'guest'"
               @click="gameMode = opt.value"
               v-show="opt.value !== 'auto'"
               :class="['btn', 'btn-small', { active: gameMode === opt.value }]"
@@ -1590,6 +1621,7 @@ onUnmounted(() => {
             <button
               v-for="opt in difficultyOptions"
               :key="opt.value"
+              :disabled="props.mode === 'guest'"
               @click="difficulty = opt.value"
               :class="['btn', 'btn-small', { active: difficulty === opt.value }]"
             >
@@ -1599,7 +1631,7 @@ onUnmounted(() => {
         </div>
         <div class="setting-group">
           <label class="checkbox-label">
-            <input type="checkbox" v-model="enableObstacles" />
+            <input type="checkbox" v-model="enableObstacles" :disabled="props.mode === 'guest'" />
             Enable Obstacles
           </label>
         </div>
@@ -1833,6 +1865,20 @@ onUnmounted(() => {
 .btn-small.active {
   background: #4ecdc4;
   color: #1a1a2e;
+}
+
+.btn-small:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.btn-small:disabled:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-small.active:disabled {
+  background: #4ecdc4;
+  opacity: 0.7;
 }
 
 .btn-danger {
