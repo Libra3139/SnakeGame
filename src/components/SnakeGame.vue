@@ -669,6 +669,16 @@ function draw(alpha) {
     ctx.stroke()
   }
 
+  const interpSnake = alpha ? snake.map((s, i) => {
+    if (i < prevSnake.length) {
+      return {
+        x: prevSnake[i].x + (s.x - prevSnake[i].x) * alpha,
+        y: prevSnake[i].y + (s.y - prevSnake[i].y) * alpha
+      }
+    }
+    return { ...s }
+  }) : snake
+
   obstacles.forEach(obs => {
     ctx.fillStyle = "#8b4513"
     ctx.shadowColor = "#8b4513"
@@ -687,8 +697,8 @@ function draw(alpha) {
     ctx.shadowBlur = 0
   }
 
-  if (snake.length > 1) {
-    const bodyLen = snake.length
+  if (interpSnake.length > 1) {
+    const bodyLen = interpSnake.length
     ctx.lineCap = "round"
     ctx.lineJoin = "round"
     ctx.lineWidth = cellSize - 4
@@ -700,8 +710,8 @@ function draw(alpha) {
       ctx.strokeStyle = `rgb(${r},${g},${b})`
       ctx.shadowColor = `rgb(${r},${g},${b})`
       ctx.shadowBlur = 6
-      const p0 = sp(i)
-      const p1 = sp(i + 1)
+      const p0 = interpSnake[i]
+      const p1 = interpSnake[i + 1]
       ctx.beginPath()
       ctx.moveTo(p0.x * cellSize + cellSize / 2, p0.y * cellSize + cellSize / 2)
       ctx.lineTo(p1.x * cellSize + cellSize / 2, p1.y * cellSize + cellSize / 2)
@@ -710,7 +720,7 @@ function draw(alpha) {
     ctx.shadowBlur = 0
   }
 
-  const headPos = sp(0)
+  const headPos = interpSnake[0]
   const cx = headPos.x * cellSize + cellSize / 2
   const cy = headPos.y * cellSize + cellSize / 2
   const radius = cellSize / 2 - 2
