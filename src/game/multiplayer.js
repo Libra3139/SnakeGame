@@ -13,6 +13,12 @@ let _pendingConn = false
 const PUSHER_KEY = import.meta.env.VITE_PUSHER_KEY || ''
 const PUSHER_CLUSTER = import.meta.env.VITE_PUSHER_CLUSTER || 'us2'
 
+function checkPusherConfig() {
+  if (!PUSHER_KEY) {
+    throw new Error('VITE_PUSHER_KEY is not set. Create a .env file with your Pusher credentials. See .env.example')
+  }
+}
+
 // 確定性亂數產生器（LCG），用於食物種子同步確保雙方地圖公平
 export class SeededRandom {
   constructor(seed) {
@@ -189,15 +195,25 @@ function generateRoomId() {
 
 export function createRoom() {
   return new Promise((resolve, reject) => {
+    try {
+      checkPusherConfig()
+    } catch (e) {
+      reject(e); return
+    }
     const roomId = generateRoomId()
     _isHost = true
     _myRoomId = roomId
     registerLocalRoom(roomId)
 
+    const timeout = setTimeout(() => {
+      reject(new Error('Connection timed out. Is the Pusher server reachable?'))
+    }, 10000)
+
     try {
       const p = getPusher()
       roomChannel = p.subscribe(`presence-room-${roomId}`)
       roomChannel.bind('pusher:subscription_succeeded', () => {
+        clearTimeout(timeout)
         resolve(roomId)
       })
       roomChannel.bind('client-player_input', (data) => {
@@ -211,10 +227,12 @@ export function createRoom() {
       roomChannel.bind('pusher:member_removed', () => {
         if (_onDisconnectCb) _onDisconnectCb()
       })
-      roomChannel.bind('pusher:subscription_error', () => {
+      roomChannel.bind('pusher:subscription_error', (err) => {
+        clearTimeout(timeout)
         reject(new Error('Failed to subscribe to room channel'))
       })
     } catch (e) {
+      clearTimeout(timeout)
       reject(e)
     }
   })
@@ -222,13 +240,23 @@ export function createRoom() {
 
 export function joinRoom(roomId) {
   return new Promise((resolve, reject) => {
+    try {
+      checkPusherConfig()
+    } catch (e) {
+      reject(e); return
+    }
     _isHost = false
     _myRoomId = roomId
+
+    const timeout = setTimeout(() => {
+      reject(new Error('Connection timed out. Is the Pusher server reachable?'))
+    }, 10000)
 
     try {
       const p = getPusher()
       roomChannel = p.subscribe(`presence-room-${roomId}`)
       roomChannel.bind('pusher:subscription_succeeded', () => {
+        clearTimeout(timeout)
         resolve()
       })
       roomChannel.bind('client-game_state', (data) => {
@@ -239,9 +267,11 @@ export function joinRoom(roomId) {
         if (_onDisconnectCb) _onDisconnectCb()
       })
       roomChannel.bind('pusher:subscription_error', () => {
+        clearTimeout(timeout)
         reject(new Error('Failed to subscribe to room channel'))
       })
     } catch (e) {
+      clearTimeout(timeout)
       reject(e)
     }
   })
