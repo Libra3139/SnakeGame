@@ -14,6 +14,7 @@ const playerIndex = computed(() => props.mode === 'host' ? 0 : (props.mode === '
 const canvas = ref(null)
 const score = ref(0)
 const gameStatus = ref("idle")
+const peerId = ref('')
 
 
 const moveSpeed = ref(10)
@@ -1001,7 +1002,7 @@ function startGame() {
 
 function handleKeydown(e) {
   if (gameStatus.value !== "playing") {
-    if (e.key === " " || e.key === "Enter") {
+    if ((e.key === " " || e.key === "Enter") && gameStatus.value === "idle") {
       e.preventDefault()
       startGame()
     }
@@ -1105,12 +1106,16 @@ function setupMultiplayer() {
   })
 
   if (props.mode === 'host') {
-    multiplayer.send({
-      type: 'obstacle_layout',
-      obstacles: obstacles.map(o => ({...o})),
-      gridSize: GRID_SIZE.value,
+    gameStatus.value = 'waiting'
+    draw()
+    multiplayer.onConnection(() => {
+      multiplayer.send({
+        type: 'obstacle_layout',
+        obstacles: obstacles.map(o => ({...o})),
+        gridSize: GRID_SIZE.value,
+      })
+      startGame()
     })
-    startGame()
   }
 }
 
@@ -1119,6 +1124,9 @@ onMounted(() => {
     loadQTable()
     loadLeaderboard()
     window.addEventListener("keydown", handleKeydown)
+    if (props.mode === 'host') {
+      peerId.value = multiplayer.myPeerId()
+    }
     setupMultiplayer()
     return
   }
@@ -1213,6 +1221,15 @@ onUnmounted(() => {
           <canvas ref="canvas" :width="isMultiplayer ? CANVAS_SIZE * 2 + 10 : CANVAS_SIZE" :height="CANVAS_SIZE"></canvas>
           <div v-if="gameStatus === 'idle' && !isMultiplayer" class="overlay">
             <p class="overlay-text">Press Space or Click Start</p>
+          </div>
+          <div v-if="gameStatus === 'waiting'" class="overlay">
+            <div class="waiting-content">
+              <p class="waiting-text">Waiting for opponent...</p>
+              <p class="waiting-label">Room ID</p>
+              <p class="waiting-id">{{ peerId }}</p>
+              <p class="waiting-hint">Share this ID with your opponent</p>
+              <button @click="$emit('back')" class="btn btn-danger waiting-cancel">Cancel</button>
+            </div>
           </div>
         </div>
 
@@ -1715,6 +1732,54 @@ canvas {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.5);
+}
+
+.waiting-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+}
+
+.waiting-text {
+  font-size: 1.3rem;
+  color: #ffd700;
+  font-weight: 700;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.waiting-label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 8px;
+}
+
+.waiting-id {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #4ecdc4;
+  letter-spacing: 2px;
+  background: rgba(78, 205, 196, 0.1);
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(78, 205, 196, 0.3);
+}
+
+.waiting-hint {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.waiting-cancel {
+  margin-top: 12px;
 }
 
 .overlay-text {
