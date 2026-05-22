@@ -1026,10 +1026,8 @@ function mpUpdate() {
 }
 
 function endMpRound(winner) {
-  if (animFrameId) cancelAnimationFrame(animFrameId)
+  if (animFrameId) clearInterval(animFrameId)
   animFrameId = null
-  accumulator = 0
-  lastTime = 0
 
   if (winner === playerIndex.value) matchScore.value++
   else if (winner === 1 - playerIndex.value) opponentMatchScore.value++
@@ -1162,11 +1160,9 @@ function startGame() {
   if (isMultiplayer.value) {
     if (props.mode === 'host') {
       gameStatus.value = "playing"
-      accumulator = 0
-      lastTime = 0
       gameWinner = null
       draw()
-      animFrameId = requestAnimationFrame(gameLoop)
+      animFrameId = setInterval(() => { mpUpdate(); draw() }, gameInterval.value)
     } else {
       gameStatus.value = "playing"
       gameWinner = null
@@ -1362,10 +1358,11 @@ function setupMultiplayer() {
       gameWinner = 1 - playerIndex.value
       gameStatus.value = 'gameover'
       if (countdownTimer) clearInterval(countdownTimer)
-      if (animFrameId) cancelAnimationFrame(animFrameId)
+      if (animFrameId) {
+        if (isMultiplayer.value) clearInterval(animFrameId)
+        else cancelAnimationFrame(animFrameId)
+      }
       animFrameId = null
-      accumulator = 0
-      lastTime = 0
       draw()
     }
   })
@@ -1416,7 +1413,10 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown)
   window.removeEventListener("beforeunload", multiplayer.disconnect)
-  if (animFrameId) cancelAnimationFrame(animFrameId)
+  if (animFrameId) {
+    if (isMultiplayer.value) clearInterval(animFrameId)
+    else cancelAnimationFrame(animFrameId)
+  }
   if (countdownTimer) clearInterval(countdownTimer)
   if (isMultiplayer.value) {
     multiplayer.disconnect()
