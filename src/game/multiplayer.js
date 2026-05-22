@@ -7,6 +7,7 @@ let _myPeerId = null
 let _onDataCb = null
 let _onDisconnectCb = null
 let _onConnCb = null
+let _pendingData = []
 
 export function createRoom() {
   return new Promise((resolve, reject) => {
@@ -19,6 +20,7 @@ export function createRoom() {
         conn = connection
         conn.on('data', (data) => {
           if (_onDataCb) _onDataCb(data)
+          else _pendingData.push(data)
         })
         conn.on('close', () => {
           if (_onDisconnectCb) _onDisconnectCb()
@@ -41,6 +43,7 @@ export function joinRoom(hostId) {
         _myPeerId = peer.id
         conn.on('data', (data) => {
           if (_onDataCb) _onDataCb(data)
+          else _pendingData.push(data)
         })
         conn.on('close', () => {
           if (_onDisconnectCb) _onDisconnectCb()
@@ -62,6 +65,10 @@ export function send(data) {
 
 export function onData(cb) {
   _onDataCb = cb
+  for (const data of _pendingData) {
+    _onDataCb(data)
+  }
+  _pendingData = []
 }
 
 export function onDisconnect(cb) {
@@ -80,6 +87,7 @@ export function disconnect() {
   _onDataCb = null
   _onDisconnectCb = null
   _onConnCb = null
+  _pendingData = []
 }
 
 export function isHost() {
