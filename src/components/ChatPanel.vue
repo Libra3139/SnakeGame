@@ -78,7 +78,7 @@ function send() {
 .chat-panel-wrapper {
   position: fixed;
   right: 0;
-  bottom: 0;
+  bottom: 12px;
   width: clamp(280px, 26vw, 380px);
   background: rgba(15, 15, 35, 0.95);
   border: 1px solid rgba(78, 205, 196, 0.2);
@@ -87,7 +87,7 @@ function send() {
   border-radius: 0 12px 0 0;
   backdrop-filter: blur(12px);
   padding: clamp(14px, 2vw, 20px);
-  transition: width 0.3s ease, padding 0.3s ease;
+  transition: width 0.3s ease, padding 0.3s ease, bottom 0.3s ease;
   overflow: hidden;
   z-index: 100;
   max-height: 400px;
@@ -97,6 +97,7 @@ function send() {
   height: 40px;
   padding: 12px 8px;
   border-radius: 0;
+  bottom: 80px;
 }
 .chat-toggle-btn {
   position: absolute;

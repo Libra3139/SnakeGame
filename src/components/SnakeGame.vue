@@ -1734,15 +1734,6 @@ onUnmounted(() => {
       <div class="game-center">
         <div class="canvas-wrapper" :class="{ 'canvas-wide': isMultiplayer }">
           <canvas ref="canvas" :width="isMultiplayer ? CANVAS_SIZE * 2 + 30 : CANVAS_SIZE" :height="CANVAS_SIZE"></canvas>
-          <div v-if="isMultiplayer" class="online-players">
-            <span class="opl-title">Online</span>
-            <div class="opl-items">
-              <div v-for="p in activePlayers" :key="p.playerUUID" class="opl-item" :class="{ 'opl-self': p.playerName === playerName }">
-                <span class="opl-dot"></span>
-                <span class="opl-name">{{ p.playerName }}</span>
-              </div>
-            </div>
-          </div>
           <div v-if="gameStatus === 'idle' && !isMultiplayer" class="overlay">
             <p class="overlay-text">Press Space or Click Start</p>
           </div>
@@ -1969,6 +1960,16 @@ onUnmounted(() => {
           </div>
         </div>
       </template>
+    </div>
+
+    <div v-if="isMultiplayer" class="online-players">
+      <span class="opl-title">Online</span>
+      <div class="opl-items">
+        <div v-for="p in activePlayers" :key="p.playerUUID" class="opl-item" :class="{ 'opl-self': p.playerName === playerName }">
+          <span class="opl-dot"></span>
+          <span class="opl-name">{{ p.playerName }}</span>
+        </div>
+      </div>
     </div>
 
     <ChatPanel
@@ -2827,17 +2828,18 @@ kbd {
 }
 
 .online-players {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   background: rgba(0, 0, 0, 0.75);
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: 8px 0 0 8px;
+  padding: 10px 14px;
   backdrop-filter: blur(6px);
-  z-index: 10;
-  max-height: 160px;
+  z-index: 99;
+  max-height: 50vh;
   overflow-y: auto;
-  min-width: 120px;
+  min-width: 130px;
 }
 
 .online-players .opl-title {
