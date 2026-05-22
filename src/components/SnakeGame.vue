@@ -1193,6 +1193,7 @@ onUnmounted(() => {
 
 <template>
   <div class="snake-game">
+    <button @click="$emit('back')" class="btn btn-back">← Back</button>
     <h1 class="title">{{ isMultiplayer ? 'Snake Battle' : 'Snake Game' }}</h1>
 
     <div class="top-bar">
@@ -1379,6 +1380,28 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
   min-height: 100vh;
   color: #ffffff;
+  position: relative;
+}
+
+.btn-back {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-back:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }
 
 .title {

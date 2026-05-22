@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import * as multiplayer from '../game/multiplayer.js'
 
 const emit = defineEmits(['startSingle', 'startMultiplayerHost', 'startMultiplayerGuest', 'back'])
@@ -9,7 +9,47 @@ const roomId = ref('')
 const myPeerId = ref('')
 const connecting = ref(false)
 const error = ref('')
-const lobbyMode = ref('') // 'host' | 'guest'
+const lobbyMode = ref('')
+const roomList = ref([])
+const lobbyOnline = ref(false)
+const lobbyStarted = ref(false)
+const fetchingRooms = ref(false)
+
+watch(showMultiplayer, async (val) => {
+  if (val) refreshRoomList()
+})
+
+async function refreshRoomList() {
+  fetchingRooms.value = true
+  try {
+    const rooms = await multiplayer.fetchRooms()
+    roomList.value = rooms
+    lobbyOnline.value = true
+  } catch {
+    roomList.value = []
+    lobbyOnline.value = false
+  }
+  fetchingRooms.value = false
+}
+
+async function toggleLobby() {
+  if (lobbyStarted.value) {
+    multiplayer.stopLobby()
+    lobbyStarted.value = false
+    return
+  }
+  try {
+    await multiplayer.startLobby()
+    multiplayer.onRoomList((rooms) => {
+      roomList.value = rooms
+    })
+    lobbyStarted.value = true
+    lobbyOnline.value = true
+    roomList.value = []
+  } catch {
+    error.value = 'Failed to start lobby'
+  }
+}
 
 async function createRoom() {
   connecting.value = true
@@ -18,12 +58,20 @@ async function createRoom() {
   try {
     const id = await multiplayer.createRoom()
     myPeerId.value = id
+    try {
+      await multiplayer.registerWithLobby(id)
+    } catch {}
     emit('startMultiplayerHost')
   } catch (e) {
     error.value = 'Failed to create room: ' + e.message
     lobbyMode.value = ''
   }
   connecting.value = false
+}
+
+async function joinPeerRoom(peerId) {
+  roomId.value = peerId
+  await joinRoom()
 }
 
 async function joinRoom() {
@@ -90,6 +138,52 @@ function stopLobby() {
             @click="joinRoom"
           >Join</button>
         </div>
+      </div>
+
+      <div class="mp-divider mp-section-divider">Available Rooms</div>
+
+      <div class="mp-room-list">
+        <div v-if="fetchingRooms" class="mp-status">Searching for rooms...</div>
+        <div v-else-if="!lobbyOnline" class="mp-lobby-offline">
+          <p>No rooms available</p>
+          <p class="mp-hint">Start the lobby to allow room discovery, or share your Room ID directly</p>
+          <button
+            v-if="!lobbyStarted"
+            @click="toggleLobby"
+            class="btn mp-btn mp-btn-small"
+          >Start Lobby Server</button>
+          <button
+            v-else
+            @click="toggleLobby"
+            class="btn mp-btn mp-btn-small mp-btn-danger"
+          >Stop Lobby Server</button>
+        </div>
+        <div v-else-if="roomList.length === 0" class="mp-no-rooms">
+          <p>No rooms available</p>
+          <p class="mp-hint">Create a room to appear here</p>
+        </div>
+        <div v-else class="mp-rooms">
+          <div
+            v-for="room in roomList"
+            :key="room.peerId"
+            class="mp-room-item"
+            @click="joinPeerRoom(room.peerId)"
+          >
+            <span class="mp-room-name">{{ room.name }}</span>
+            <span class="mp-room-id-text">{{ room.peerId.slice(0, 12) }}...</span>
+            <span class="mp-room-join-hint">Join →</span>
+          </div>
+        </div>
+        <button
+          v-if="lobbyOnline"
+          @click="refreshRoomList"
+          class="btn mp-btn mp-btn-small mp-btn-refresh"
+          :disabled="fetchingRooms"
+        >Refresh</button>
+      </div>
+
+      <div v-if="lobbyStarted" class="mp-lobby-badge">
+        Lobby Server Running
       </div>
 
       <div v-if="connecting" class="mp-status">Connecting...</div>
@@ -289,5 +383,123 @@ function stopLobby() {
   margin-top: 12px;
   text-align: center;
   font-size: 0.9rem;
+}
+
+.mp-section-divider {
+  margin: 20px 0 12px;
+  font-size: 0.75rem;
+}
+
+.mp-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mp-lobby-offline,
+.mp-no-rooms {
+  text-align: center;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.mp-lobby-offline p,
+.mp-no-rooms p {
+  margin: 4px 0;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.mp-lobby-offline .mp-btn {
+  margin-top: 10px;
+}
+
+.mp-btn-small {
+  padding: 8px 16px;
+  font-size: 0.85rem;
+}
+
+.mp-btn-danger {
+  background: #ff6b6b;
+  color: #fff;
+}
+
+.mp-btn-danger:hover {
+  background: #ff5252;
+}
+
+.mp-btn-refresh {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  align-self: center;
+  margin-top: 4px;
+}
+
+.mp-btn-refresh:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.mp-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.mp-room-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mp-room-item:hover {
+  background: rgba(78, 205, 196, 0.1);
+  border-color: rgba(78, 205, 196, 0.3);
+}
+
+.mp-room-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #4ecdc4;
+}
+
+.mp-room-id-text {
+  color: #666;
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
+.mp-room-join-hint {
+  margin-left: auto;
+  color: #555;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.mp-room-item:hover .mp-room-join-hint {
+  color: #4ecdc4;
+}
+
+.mp-lobby-badge {
+  text-align: center;
+  font-size: 0.7rem;
+  color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.1);
+  padding: 4px 12px;
+  border-radius: 20px;
+  display: inline-block;
+  margin: 8px auto 0;
 }
 </style>

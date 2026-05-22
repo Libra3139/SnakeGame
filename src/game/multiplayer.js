@@ -9,6 +9,111 @@ let _onDisconnectCb = null
 let _onConnCb = null
 let _pendingData = []
 
+const LOBBY_ID = 'snake-lobby'
+let _lobbyPeer = null
+let _lobbyConn = null
+let _onRoomListCb = null
+
+export function startLobby() {
+  return new Promise((resolve, reject) => {
+    _lobbyPeer = new Peer(LOBBY_ID)
+    _lobbyPeer.on('open', () => resolve())
+    _lobbyPeer.on('error', (err) => {
+      _lobbyPeer = null
+      reject(err)
+    })
+    _lobbyPeer.on('connection', (c) => {
+      c.on('data', (data) => {
+        if (data.type === 'register') {
+          rooms.set(c.peer, {
+            peerId: c.peer,
+            name: data.name || 'Snake Game',
+            joinedAt: Date.now()
+          })
+          c.send({ type: 'registered', ok: true })
+          broadcastRooms()
+        }
+      })
+      c.on('close', () => {
+        if (rooms.delete(c.peer)) broadcastRooms()
+      })
+    })
+  })
+}
+
+const rooms = new Map()
+
+function broadcastRooms() {
+  const list = Array.from(rooms.values())
+  for (const [peerId] of rooms) {
+    const conns = _lobbyPeer?.connections[peerId]
+    if (conns) {
+      for (const c of conns) {
+        try { c.send({ type: 'room_list', rooms: list }) } catch {}
+      }
+    }
+  }
+  if (_onRoomListCb) _onRoomListCb(list)
+}
+
+export function stopLobby() {
+  if (_lobbyPeer) { _lobbyPeer.destroy(); _lobbyPeer = null }
+  rooms.clear()
+}
+
+export function registerWithLobby(hostPeerId) {
+  return new Promise((resolve, reject) => {
+    if (_lobbyConn) reject(new Error('Already registered'))
+    const p = new Peer()
+    p.on('open', () => {
+      const c = p.connect(LOBBY_ID, { reliable: true })
+      c.on('open', () => {
+        c.send({ type: 'register', name: 'Snake Game' })
+        _lobbyConn = { conn: c, peer: p }
+        resolve()
+      })
+      c.on('error', () => { p.destroy(); reject(new Error('Lobby unavailable')) })
+      setTimeout(() => { if (!_lobbyConn) { p.destroy(); reject(new Error('Lobby timeout')) } }, 5000)
+    })
+    p.on('error', () => reject(new Error('Failed to connect')))
+  })
+}
+
+export function unregisterFromLobby() {
+  if (_lobbyConn) {
+    try { _lobbyConn.conn.send({ type: 'unregister' }) } catch {}
+    _lobbyConn.conn.close()
+    _lobbyConn.peer.destroy()
+    _lobbyConn = null
+  }
+}
+
+export function fetchRooms() {
+  return new Promise((resolve, reject) => {
+    const p = new Peer()
+    p.on('open', () => {
+      const c = p.connect(LOBBY_ID, { reliable: true })
+      c.on('open', () => {
+        c.send({ type: 'list' })
+        c.on('data', (data) => {
+          if (data.type === 'room_list') {
+            c.close()
+            p.destroy()
+            resolve(data.rooms)
+          }
+        })
+      })
+      c.on('error', () => { p.destroy(); reject(new Error('Lobby unavailable')) })
+      setTimeout(() => { p.destroy(); reject(new Error('Lobby timeout')) }, 5000)
+    })
+    p.on('error', () => reject(new Error('Failed to connect')))
+  })
+}
+
+export function onRoomList(cb) {
+  _onRoomListCb = cb
+}
+
 export function createRoom() {
   return new Promise((resolve, reject) => {
     peer = new Peer()
@@ -88,6 +193,7 @@ export function disconnect() {
   _onDisconnectCb = null
   _onConnCb = null
   _pendingData = []
+  try { unregisterFromLobby() } catch {}
 }
 
 export function isHost() {
