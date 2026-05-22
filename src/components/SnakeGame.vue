@@ -1,7 +1,7 @@
 ﻿<script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from "vue"
 import * as multiplayer from '../game/multiplayer.js'
-import { initIP, myIP } from '../game/multiplayer.js'
+import { getPlayerName, getPlayerUUID } from '../game/multiplayer.js'
 
 const props = defineProps({
   mode: { type: String, default: 'single' },
@@ -16,8 +16,9 @@ const canvas = ref(null)
 const score = ref(0)
 const gameStatus = ref("idle")
 const peerId = ref('')
-const peerIP = ref('')
-const opponentIP = ref('')
+const playerName = ref('')
+const opponentName = ref('')
+const playerListCollapsed = ref(false)
 const myReady = ref(false)
 const opponentReady = ref(false)
 const countdownValue = ref(5)
@@ -77,6 +78,8 @@ let animFrameId = null
 let inputQueue = []
 let guestInputQueue = []
 let obstacles = []
+let myObstacles = []
+let opponentObstacles = []
 let obstaclesActive = false
 let prevSnake = []
 
@@ -264,7 +267,8 @@ function syncSettingsToGuest() {
   if (props.mode === 'host' && gameStatus.value === 'ready') {
     multiplayer.send({
       type: 'obstacle_layout',
-      obstacles: obstacles.map(o => ({...o})),
+      obstacles: [],
+      foods: foods.map(f => ({...f})),
       boardSize: boardSize.value,
       difficulty: difficulty.value,
       enableObstacles: enableObstacles.value,
@@ -413,9 +417,8 @@ function initGame() {
     opponentPrevSnake = []
 
     obstacles = []
-    if (props.mode === 'host') {
-      generateObstacles()
-    }
+    myObstacles = []
+    opponentObstacles = []
     placeFood()
     return
   }
@@ -548,9 +551,9 @@ function draw(alpha) {
   const cellSize = CELL_SIZE.value
 
   if (isMultiplayer.value) {
-    drawBoard(ctx, 0, snake, direction, foods, obstacles, `You (P${playerIndex.value + 1})`,
+    drawBoard(ctx, 0, snake, direction, foods, myObstacles, `You (P${playerIndex.value + 1})`,
       { start: { r: 78, g: 205, b: 196 }, end: { r: 26, g: 107, b: 101 } })
-    drawBoard(ctx, CANVAS_SIZE + 30, opponentSnake, opponentDirection, foods, obstacles, 'Opponent',
+    drawBoard(ctx, CANVAS_SIZE + 30, opponentSnake, opponentDirection, foods, opponentObstacles, 'Opponent',
       { start: { r: 255, g: 107, b: 179 }, end: { r: 180, g: 40, b: 110 } })
 
     const mw = CANVAS_SIZE * 2 + 10
@@ -925,6 +928,28 @@ function update() {
   }
 }
 
+function addRockForOpponent(oppSnake, oppDir, oppFoods, rockArray, gs) {
+  const forbidden = new Set()
+  for (const s of oppSnake) forbidden.add(`${s.x},${s.y}`)
+  for (const f of oppFoods) forbidden.add(`${Math.floor(f.x)},${Math.floor(f.y)}`)
+  if (oppSnake.length > 0) {
+    const head = oppSnake[0]
+    const frontX = head.x + oppDir.x
+    const frontY = head.y + oppDir.y
+    if (frontX >= 0 && frontX < gs && frontY >= 0 && frontY < gs) {
+      forbidden.add(`${frontX},${frontY}`)
+    }
+  }
+  for (const r of rockArray) forbidden.add(`${r.x},${r.y}`)
+  let pos
+  let attempts = 0
+  do {
+    pos = { x: Math.floor(Math.random() * gs), y: Math.floor(Math.random() * gs) }
+    attempts++
+  } while (attempts < 200 && forbidden.has(`${pos.x},${pos.y}`))
+  if (attempts < 200) rockArray.push(pos)
+}
+
 function mpUpdate() {
   prevSnake = snake.map(s => ({...s}))
   opponentPrevSnake = opponentSnake.map(s => ({...s}))
@@ -952,13 +977,11 @@ function mpUpdate() {
 
   if (hostHead.x < 0 || hostHead.x >= gs || hostHead.y < 0 || hostHead.y >= gs) hostAlive = false
   else if (snake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) hostAlive = false
-  else if (obstacles.some(o => o.x === hostHead.x && o.y === hostHead.y)) hostAlive = false
-  else if (opponentSnake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) hostAlive = false
+  else if (myObstacles.some(o => o.x === hostHead.x && o.y === hostHead.y)) hostAlive = false
 
   if (guestHead.x < 0 || guestHead.x >= gs || guestHead.y < 0 || guestHead.y >= gs) guestAlive = false
   else if (opponentSnake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) guestAlive = false
-  else if (obstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) guestAlive = false
-  else if (snake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) guestAlive = false
+  else if (opponentObstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) guestAlive = false
 
   if (hostHead.x === guestHead.x && hostHead.y === guestHead.y) {
     hostAlive = false
@@ -1007,20 +1030,21 @@ function mpUpdate() {
     }
   }
 
-  if (hostAte || guestAte) {
-    if (!obstaclesActive && enableObstacles.value) {
-      obstaclesActive = true
-      generateObstacles()
-    }
+  if (hostAte) {
+    addRockForOpponent(opponentSnake, opponentDirection, foods, opponentObstacles, gs)
+    if (gameMode.value === "greedy") placeFood(4)
+    else placeFood()
+  } else {
+    snake.pop()
   }
 
-  if (!hostAte) snake.pop()
-  else if (gameMode.value === "greedy") placeFood(4)
-  else placeFood()
-
-  if (!guestAte) opponentSnake.pop()
-  else if (gameMode.value === "greedy") placeFood(4)
-  else placeFood()
+  if (guestAte) {
+    addRockForOpponent(snake, direction, foods, myObstacles, gs)
+    if (gameMode.value === "greedy") placeFood(4)
+    else placeFood()
+  } else {
+    opponentSnake.pop()
+  }
 
   multiplayer.send({
     type: 'game_state',
@@ -1031,7 +1055,8 @@ function mpUpdate() {
     foods: foods.map(f => ({...f})),
     hostScore: score.value,
     guestScore: opponentScore,
-    obstacles: obstacles.map(o => ({...o})),
+    myObstacles: myObstacles.map(o => ({...o})),
+    opponentObstacles: opponentObstacles.map(o => ({...o})),
   })
 }
 
@@ -1095,7 +1120,8 @@ function resetMpRound() {
   opponentPrevSnake = []
   gameWinner = null
   travelingFood = null
-  if (props.mode === 'host') { generateObstacles() }
+  myObstacles = []
+  opponentObstacles = []
   placeFood()
   draw()
 }
@@ -1311,9 +1337,11 @@ function setupMultiplayer() {
 
   multiplayer.onData((data) => {
     if (data.type === 'obstacle_layout') {
-      obstacles = data.obstacles.map(o => ({...o}))
+      if (data.foods) {
+        foods = data.foods.map(f => ({...f}))
+      }
       if (props.mode === 'guest') {
-        if (data.hostIP) opponentIP.value = data.hostIP
+        if (data.hostName) opponentName.value = data.hostName
         if (gameStatus.value === 'waiting' || gameStatus.value === 'ready' || gameStatus.value === 'idle') {
           if (data.boardSize) boardSize.value = data.boardSize
           if (data.difficulty) difficulty.value = data.difficulty
@@ -1326,16 +1354,17 @@ function setupMultiplayer() {
       }
       draw()
     } else if (data.type === 'request_state') {
-      if (data.guestIP) opponentIP.value = data.guestIP
+      if (data.guestName) opponentName.value = data.guestName
       multiplayer.send({
         type: 'obstacle_layout',
-        obstacles: obstacles.map(o => ({...o})),
+        obstacles: [],
+        foods: foods.map(f => ({...f})),
         boardSize: boardSize.value,
         difficulty: difficulty.value,
         enableObstacles: enableObstacles.value,
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
-        hostIP: peerIP.value,
+        hostName: playerName.value,
       })
     } else if (data.type === 'game_state') {
       if (props.mode === 'guest' && gameStatus.value === 'playing') {
@@ -1344,7 +1373,8 @@ function setupMultiplayer() {
         opponentSnake = data.snake.map(s => ({...s}))
         opponentDirection = { ...data.direction }
         foods = data.foods.map(f => ({...f}))
-        obstacles = data.obstacles.map(o => ({...o}))
+        myObstacles = data.opponentObstacles.map(o => ({...o}))
+        opponentObstacles = data.myObstacles.map(o => ({...o}))
         score.value = data.guestScore
         opponentScore = data.hostScore
         draw()
@@ -1408,13 +1438,14 @@ function setupMultiplayer() {
     multiplayer.onConnection(() => {
       multiplayer.send({
         type: 'obstacle_layout',
-        obstacles: obstacles.map(o => ({...o})),
+        obstacles: [],
+        foods: foods.map(f => ({...f})),
         boardSize: boardSize.value,
         difficulty: difficulty.value,
         enableObstacles: enableObstacles.value,
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
-        hostIP: peerIP.value,
+        hostName: playerName.value,
       })
       gameStatus.value = 'ready'
       draw()
@@ -1422,14 +1453,13 @@ function setupMultiplayer() {
   } else {
     gameStatus.value = 'ready'
     draw()
-    multiplayer.send({ type: 'request_state', guestIP: peerIP.value })
+    multiplayer.send({ type: 'request_state', guestName: playerName.value })
   }
 }
 
-onMounted(async () => {
+onMounted(() => {
   if (isMultiplayer.value) {
-    await initIP()
-    peerIP.value = myIP()
+    playerName.value = getPlayerName()
     loadQTable()
     loadLeaderboard()
     window.addEventListener("keydown", handleKeydown)
@@ -1467,8 +1497,7 @@ onUnmounted(() => {
     <div class="top-bar">
       <div v-if="isMultiplayer" class="multiplayer-info">
         <div class="mp-player-badge p1-badge">
-          P{{ playerIndex + 1 }} (You)
-          <span class="mp-badge-ip">{{ peerIP }}</span>
+          {{ playerName || ('P' + (playerIndex + 1)) }}
         </div>
         <div class="score-board mp-score">
           <div class="score-item">
@@ -1481,8 +1510,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="mp-player-badge p2-badge">
-          Opponent
-          <span class="mp-badge-ip">{{ opponentIP }}</span>
+          {{ opponentName || 'Opponent' }}
         </div>
       </div>
       <div v-else class="score-board">
@@ -1546,9 +1574,9 @@ onUnmounted(() => {
               <p class="waiting-text">Waiting for opponent...</p>
               <p class="waiting-label">Room ID</p>
               <p class="waiting-id">{{ peerId }}</p>
-              <p class="waiting-label" style="margin-top:8px">Your IP</p>
-              <p class="waiting-id waiting-ip">{{ peerIP || 'Detecting...' }}</p>
-              <p class="waiting-hint">Share Room ID or connect via IP</p>
+              <p class="waiting-label" style="margin-top:8px">Your Name</p>
+              <p class="waiting-id waiting-ip">{{ playerName }}</p>
+              <p class="waiting-hint">Share this Room ID with your opponent</p>
               <button @click="$emit('back')" class="btn btn-danger waiting-cancel">Cancel</button>
             </div>
           </div>
@@ -1563,14 +1591,12 @@ onUnmounted(() => {
               <div class="ready-players">
                 <div class="ready-player" :class="{ 'ready-done': myReady }">
                   <span class="ready-icon">{{ myReady ? '✓' : '⋯' }}</span>
-                  <span>You</span>
-                  <span class="ready-ip">{{ peerIP || '...' }}</span>
+                  <span>{{ playerName || 'You' }}</span>
                 </div>
                 <span class="ready-vs">VS</span>
                 <div class="ready-player" :class="{ 'ready-done': opponentReady }">
                   <span class="ready-icon">{{ opponentReady ? '✓' : '⋯' }}</span>
-                  <span>Opponent</span>
-                  <span class="ready-ip">{{ opponentIP || '...' }}</span>
+                  <span>{{ opponentName || 'Opponent' }}</span>
                 </div>
               </div>
               <button v-if="!myReady" @click="pressReady" class="btn btn-primary ready-btn">Ready</button>
@@ -1686,6 +1712,27 @@ onUnmounted(() => {
           </label>
         </div>
         <p class="current-mode">{{ gameMode === "greedy" ? "Greedy" : currentSpeedLabel }}{{ enableObstacles ? " + Obstacles" : "" }}</p>
+      </div>
+
+      <div v-if="isMultiplayer" class="player-list-panel" :class="{ collapsed: playerListCollapsed }">
+        <button class="pl-toggle" @click="playerListCollapsed = !playerListCollapsed">
+          {{ playerListCollapsed ? '◀' : '▶' }}
+        </button>
+        <div v-show="!playerListCollapsed" class="pl-content">
+          <h3>Players</h3>
+          <div class="pl-item pl-you">
+            <span class="pl-dot"></span>
+            <span class="pl-name">{{ playerName || ('P' + (playerIndex + 1)) }}</span>
+            <span class="pl-tag">You</span>
+          </div>
+          <div v-if="opponentName" class="pl-item pl-opponent">
+            <span class="pl-dot"></span>
+            <span class="pl-name">{{ opponentName }}</span>
+          </div>
+          <div v-else class="pl-item pl-empty">
+            <span class="pl-name">Waiting...</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -2450,13 +2497,107 @@ kbd {
   margin: 0 2px;
 }
 
+.player-list-panel {
+  position: relative;
+  width: 200px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  padding: 16px;
+  transition: width 0.3s ease, padding 0.3s ease;
+  align-self: flex-start;
+  overflow: hidden;
+}
+.player-list-panel.collapsed {
+  width: 40px;
+  padding: 16px 8px;
+}
+.pl-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #aaa;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  z-index: 2;
+}
+.player-list-panel.collapsed .pl-toggle {
+  right: 6px;
+}
+.pl-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.pl-content h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: #4ecdc4;
+}
+.pl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+.pl-you {
+  background: rgba(78, 205, 196, 0.1);
+  border: 1px solid rgba(78, 205, 196, 0.25);
+}
+.pl-opponent {
+  background: rgba(255, 107, 179, 0.1);
+  border: 1px solid rgba(255, 107, 179, 0.25);
+}
+.pl-empty {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+.pl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ecdc4;
+  flex-shrink: 0;
+}
+.pl-opponent .pl-dot {
+  background: #ff6bb3;
+}
+.pl-empty .pl-dot {
+  background: #555;
+}
+.pl-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pl-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 @media (max-width: 1200px) {
   .game-layout {
     flex-direction: column;
     align-items: center;
   }
   .settings-panel,
-  .leaderboard-panel {
+  .leaderboard-panel,
+  .player-list-panel {
     width: 400px;
     max-width: 90vw;
   }

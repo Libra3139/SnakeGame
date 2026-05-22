@@ -4,167 +4,98 @@ let peer = null
 let conn = null
 let _isHost = false
 let _myPeerId = null
-let _myIP = ''
 let _onDataCb = null
 let _onDisconnectCb = null
 let _onConnCb = null
 let _pendingData = []
 let _pendingConn = false
 
-const LOBBY_ID = 'snake-lobby'
-let _lobbyPeer = null
-let _lobbyConn = null
-let _onRoomListCb = null
-let _lobbyCleanupTimer = null
-let _lobbyHeartbeat = null
+let _playerUUID = ''
+let _playerName = ''
 
-export async function initIP() {
+export function generateIdentity() {
+  if (_playerUUID && _playerName) return { uuid: _playerUUID, name: _playerName }
+  _playerUUID = (crypto.randomUUID && crypto.randomUUID()) || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+  })
+  const random6 = Math.floor(Math.random() * 1000000).toString().padStart(6, '0')
+  _playerName = `player${random6}`
+  return { uuid: _playerUUID, name: _playerName }
+}
+
+export function getPlayerName() { return _playerName }
+export function getPlayerUUID() { return _playerUUID }
+
+const LOCAL_ROOMS_KEY = 'snake-local-rooms'
+const ROOM_TTL = 30000
+
+function getLocalRoomsRaw() {
   try {
-    const res = await fetch('https://api.ipify.org?format=json')
-    const data = await res.json()
-    _myIP = data.ip
-  } catch {
-    _myIP = 'unknown'
-  }
-  return _myIP
+    const data = localStorage.getItem(LOCAL_ROOMS_KEY)
+    return data ? new Map(JSON.parse(data)) : new Map()
+  } catch { return new Map() }
 }
 
-export function myIP() {
-  return _myIP
+function saveLocalRooms(map) {
+  localStorage.setItem(LOCAL_ROOMS_KEY, JSON.stringify(Array.from(map.entries())))
 }
 
-export function startLobby() {
-  return new Promise((resolve, reject) => {
-    _lobbyPeer = new Peer(LOBBY_ID)
-    _lobbyPeer.on('open', () => {
-      _lobbyCleanupTimer = setInterval(() => {
-        const now = Date.now()
-        let changed = false
-        for (const [key, room] of rooms) {
-          if (now - (room.lastPing || room.joinedAt) > 8000) {
-            rooms.delete(key)
-            changed = true
-          }
-        }
-        if (changed) broadcastRooms()
-      }, 5000)
-      resolve()
-    })
-    _lobbyPeer.on('error', (err) => {
-      _lobbyPeer = null
-      reject(err)
-    })
-    _lobbyPeer.on('connection', (c) => {
-      c.on('data', (data) => {
-        switch (data.type) {
-          case 'register':
-            rooms.set(data.peerId || c.peer, {
-              peerId: data.peerId || c.peer,
-              name: data.name || 'Snake Game',
-              joinedAt: Date.now(),
-              lastPing: Date.now(),
-              connPeer: c.peer
-            })
-            c.send({ type: 'registered', ok: true })
-            broadcastRooms()
-            break
-          case 'unregister':
-            for (const [key, room] of rooms) {
-              if (room.connPeer === c.peer) { rooms.delete(key); broadcastRooms(); break }
-            }
-            break
-          case 'list':
-            c.send({
-              type: 'room_list',
-              rooms: Array.from(rooms.values()).filter(r => Date.now() - (r.lastPing || r.joinedAt) <= 8000)
-            })
-            break
-          case 'ping':
-            for (const room of rooms.values()) {
-              if (room.connPeer === c.peer) { room.lastPing = Date.now(); break }
-            }
-            c.send({ type: 'pong' })
-            break
-        }
-      })
-      c.on('close', () => {
-        for (const [key, room] of rooms) {
-          if (room.connPeer === c.peer) { rooms.delete(key); broadcastRooms(); break }
-        }
-      })
-    })
+export function registerLocalRoom(hostPeerId) {
+  const rooms = getLocalRoomsRaw()
+  rooms.set(hostPeerId, {
+    peerId: hostPeerId,
+    playerName: _playerName,
+    playerUUID: _playerUUID,
+    timestamp: Date.now()
   })
+  saveLocalRooms(rooms)
 }
 
-export function stopLobby() {
-  if (_lobbyCleanupTimer) { clearInterval(_lobbyCleanupTimer); _lobbyCleanupTimer = null }
-  if (_lobbyPeer) { _lobbyPeer.destroy(); _lobbyPeer = null }
-  rooms.clear()
+export function unregisterLocalRoom(peerId) {
+  const rooms = getLocalRoomsRaw()
+  rooms.delete(peerId)
+  saveLocalRooms(rooms)
 }
 
-const rooms = new Map()
-
-function broadcastRooms() {
-  const list = Array.from(rooms.values())
-  if (_onRoomListCb) _onRoomListCb(list)
-}
-
-export function registerWithLobby(hostPeerId) {
-  return new Promise((resolve, reject) => {
-    if (_lobbyConn) reject(new Error('Already registered'))
-    const p = new Peer()
-    p.on('open', () => {
-      const c = p.connect(LOBBY_ID, { reliable: true })
-      c.on('open', () => {
-        c.send({ type: 'register', peerId: hostPeerId, name: 'Snake Game' })
-        _lobbyConn = { conn: c, peer: p }
-        _lobbyHeartbeat = setInterval(() => {
-          try { c.send({ type: 'ping' }) } catch {}
-        }, 3000)
-        resolve()
-      })
-      c.on('error', () => { p.destroy(); reject(new Error('Lobby unavailable')) })
-      setTimeout(() => { if (!_lobbyConn) { p.destroy(); reject(new Error('Lobby timeout')) } }, 5000)
-    })
-    p.on('error', () => reject(new Error('Failed to connect')))
-  })
-}
-
-export function unregisterFromLobby() {
-  if (_lobbyHeartbeat) { clearInterval(_lobbyHeartbeat); _lobbyHeartbeat = null }
-  if (_lobbyConn) {
-    try { _lobbyConn.conn.send({ type: 'unregister' }) } catch {}
-    _lobbyConn.conn.close()
-    _lobbyConn.peer.destroy()
-    _lobbyConn = null
+export function updateLocalRoomPing(peerId) {
+  const rooms = getLocalRoomsRaw()
+  const room = rooms.get(peerId)
+  if (room) {
+    room.timestamp = Date.now()
+    saveLocalRooms(rooms)
   }
+}
+
+export function fetchLocalRooms() {
+  const rooms = getLocalRoomsRaw()
+  const now = Date.now()
+  const valid = []
+  for (const [, room] of rooms) {
+    if (now - room.timestamp < ROOM_TTL) {
+      valid.push({ ...room })
+    }
+  }
+  return valid
 }
 
 export function fetchRooms() {
-  return new Promise((resolve, reject) => {
-    const p = new Peer()
-    p.on('open', () => {
-      const c = p.connect(LOBBY_ID, { reliable: true })
-      c.on('open', () => {
-        c.send({ type: 'list' })
-        c.on('data', (data) => {
-          if (data.type === 'room_list') {
-            c.close()
-            p.destroy()
-            resolve(data.rooms)
-          }
-        })
-      })
-      c.on('error', () => { p.destroy(); reject(new Error('Lobby unavailable')) })
-      setTimeout(() => { p.destroy(); reject(new Error('Lobby timeout')) }, 5000)
-    })
-    p.on('error', () => reject(new Error('Failed to connect')))
-  })
+  return Promise.resolve(fetchLocalRooms())
 }
 
-export function onRoomList(cb) {
-  _onRoomListCb = cb
+export function onRoomList() {}
+
+export function startLobby() {
+  return Promise.resolve()
 }
+
+export function stopLobby() {}
+
+export function registerWithLobby() {
+  return Promise.resolve()
+}
+
+export function unregisterFromLobby() {}
 
 export function createRoom() {
   return new Promise((resolve, reject) => {
@@ -172,6 +103,7 @@ export function createRoom() {
     peer.on('open', (id) => {
       _isHost = true
       _myPeerId = id
+      registerLocalRoom(id)
       resolve(id)
       peer.on('connection', (connection) => {
         conn = connection
@@ -182,8 +114,8 @@ export function createRoom() {
         conn.on('close', () => {
           if (_onDisconnectCb) _onDisconnectCb()
         })
-        if (_onConnCb) { _onConnCb() }
-        else { _pendingConn = true }
+        if (_onConnCb) _onConnCb()
+        else _pendingConn = true
       })
     })
     peer.on('error', (err) => reject(err))
@@ -242,6 +174,7 @@ export function onConnection(cb) {
 }
 
 export function disconnect() {
+  if (_myPeerId) unregisterLocalRoom(_myPeerId)
   if (conn) { conn.close(); conn = null }
   if (peer) { peer.destroy(); peer = null }
   _isHost = false
@@ -251,7 +184,6 @@ export function disconnect() {
   _onConnCb = null
   _pendingData = []
   _pendingConn = false
-  try { unregisterFromLobby() } catch {}
 }
 
 export function isHost() {
