@@ -1564,20 +1564,23 @@ function setupMultiplayer() {
 
   multiplayer.onDisconnect(() => {
     if (gameStatus.value === 'playing' || gameStatus.value === 'ready' || gameStatus.value === 'countdown' || gameStatus.value === 'match_over') {
-      console.warn('onDisconnect fired, gameStatus=' + gameStatus.value + ' — waiting 3s before ending game')
-      setTimeout(() => {
-        if (gameStatus.value === 'playing' || gameStatus.value === 'ready' || gameStatus.value === 'countdown' || gameStatus.value === 'match_over') {
-          console.warn('onDisconnect confirmed — ending game, opponent wins')
-          gameWinner = 1 - playerIndex.value
-          gameStatus.value = 'gameover'
-          if (countdownTimer) clearInterval(countdownTimer)
-          if (animFrameId) cancelAnimationFrame(animFrameId)
-          animFrameId = null
-          draw()
-        } else {
-          console.warn('onDisconnect cancelled — gameStatus changed to ' + gameStatus.value + ' during grace period')
-        }
-      }, 3000)
+      console.warn('onDisconnect — opponent left, current status:', gameStatus.value)
+      if (countdownTimer) clearInterval(countdownTimer)
+      if (animFrameId) cancelAnimationFrame(animFrameId)
+      animFrameId = null
+      if (props.mode === 'host') {
+        matchScore.value = 0
+        opponentMatchScore.value = 0
+        currentRound.value = 1
+        myReady.value = false
+        opponentReady.value = false
+        opponentName.value = ''
+        initGame()
+        gameStatus.value = 'waiting'
+      } else {
+        gameStatus.value = 'disconnected'
+      }
+      draw()
     }
   })
 
@@ -1731,6 +1734,15 @@ onUnmounted(() => {
       <div class="game-center">
         <div class="canvas-wrapper" :class="{ 'canvas-wide': isMultiplayer }">
           <canvas ref="canvas" :width="isMultiplayer ? CANVAS_SIZE * 2 + 30 : CANVAS_SIZE" :height="CANVAS_SIZE"></canvas>
+          <div v-if="isMultiplayer" class="online-players">
+            <span class="opl-title">Online</span>
+            <div class="opl-items">
+              <div v-for="p in activePlayers" :key="p.playerUUID" class="opl-item" :class="{ 'opl-self': p.playerName === playerName }">
+                <span class="opl-dot"></span>
+                <span class="opl-name">{{ p.playerName }}</span>
+              </div>
+            </div>
+          </div>
           <div v-if="gameStatus === 'idle' && !isMultiplayer" class="overlay">
             <p class="overlay-text">Press Space or Click Start</p>
           </div>
@@ -1743,6 +1755,12 @@ onUnmounted(() => {
               <p class="waiting-id waiting-ip">{{ playerName }}</p>
               <p class="waiting-hint">Share this Room ID with your opponent</p>
               <button @click="$emit('back')" class="btn btn-danger waiting-cancel">Cancel</button>
+            </div>
+          </div>
+          <div v-if="gameStatus === 'disconnected'" class="overlay">
+            <div class="waiting-content">
+              <p class="waiting-text">Opponent disconnected</p>
+              <button @click="$emit('back')" class="btn btn-danger waiting-cancel">Back to Menu</button>
             </div>
           </div>
           <div v-if="gameStatus === 'ready'" class="overlay">
@@ -1928,26 +1946,20 @@ onUnmounted(() => {
             <p class="current-mode">{{ gameMode === "greedy" ? "Greedy" : currentSpeedLabel }}{{ enableObstacles ? " + Obstacles" : "" }}</p>
           </div>
           <div class="bottom-player-list">
-            <h3>Players</h3>
+            <h3>Room</h3>
             <div class="mp-player-items">
               <div class="pl-item pl-you">
                 <span class="pl-dot"></span>
                 <span class="pl-name">{{ playerName || ('P' + (playerIndex + 1)) }}</span>
                 <span class="pl-tag">You</span>
               </div>
-              <template v-for="p in activePlayers" :key="p.playerUUID">
-                <div v-if="p.playerName !== playerName && p.playerName !== opponentName" class="pl-item pl-other">
-                  <span class="pl-dot"></span>
-                  <span class="pl-name">{{ p.playerName }}</span>
-                </div>
-              </template>
               <div v-if="opponentName" class="pl-item pl-opponent">
                 <span class="pl-dot"></span>
                 <span class="pl-name">{{ opponentName }}</span>
                 <span class="pl-tag">Opp</span>
               </div>
-              <div v-if="activePlayers.length <= 1 && !opponentName" class="pl-item pl-empty">
-                <span class="pl-name">No other players</span>
+              <div v-if="!opponentName" class="pl-item pl-empty">
+                <span class="pl-name">Waiting for opponent...</span>
               </div>
             </div>
           </div>
@@ -2812,6 +2824,64 @@ kbd {
   align-items: center;
   gap: 10px;
   padding: 10px 0;
+}
+
+.online-players {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  border-radius: 8px;
+  padding: 8px 12px;
+  backdrop-filter: blur(6px);
+  z-index: 10;
+  max-height: 160px;
+  overflow-y: auto;
+  min-width: 120px;
+}
+
+.online-players .opl-title {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4ecdc4;
+  margin-bottom: 6px;
+}
+
+.online-players .opl-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.online-players .opl-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #ccc;
+}
+
+.online-players .opl-self {
+  color: #4ecdc4;
+  font-weight: 600;
+}
+
+.online-players .opl-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ecdc4;
+  flex-shrink: 0;
+}
+
+.online-players .opl-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
 }
 
 .bottom-controls p {
