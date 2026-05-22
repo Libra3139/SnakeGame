@@ -72,6 +72,7 @@ let direction = { x: 1, y: 0 }
 let nextDirection = { x: 1, y: 0 }
 let animFrameId = null
 let inputQueue = []
+let guestInputQueue = []
 let obstacles = []
 let obstaclesActive = false
 let prevSnake = []
@@ -360,6 +361,7 @@ function initGame() {
     direction = { x: 1, y: 0 }
     nextDirection = { x: 1, y: 0 }
     inputQueue = []
+    guestInputQueue = []
     score.value = 0
 
     opponentSnake = [
@@ -891,44 +893,83 @@ function mpUpdate() {
   prevSnake = snake.map(s => ({...s}))
   opponentPrevSnake = opponentSnake.map(s => ({...s}))
 
+  const gs = GRID_SIZE.value
+
   if (inputQueue.length > 0) {
     const next = inputQueue.shift()
     if (next.x !== -direction.x || next.y !== -direction.y) {
       direction = { ...next }
     }
   }
+  if (guestInputQueue.length > 0) {
+    const next = guestInputQueue.shift()
+    if (next.x !== -opponentDirection.x || next.y !== -opponentDirection.y) {
+      opponentDirection = { ...next }
+    }
+  }
 
-  const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y }
+  const hostHead = { x: snake[0].x + direction.x, y: snake[0].y + direction.y }
+  const guestHead = { x: opponentSnake[0].x + opponentDirection.x, y: opponentSnake[0].y + opponentDirection.y }
 
-  const gs = GRID_SIZE.value
-  if (head.x < 0 || head.x >= gs || head.y < 0 || head.y >= gs) { endMpRound(1 - playerIndex.value); return }
-  if (snake.some(seg => seg.x === head.x && seg.y === head.y)) { endMpRound(1 - playerIndex.value); return }
-  if (obstacles.some(o => o.x === head.x && o.y === head.y)) { endMpRound(1 - playerIndex.value); return }
+  let hostAlive = true
+  let guestAlive = true
 
-  snake.unshift(head)
+  if (hostHead.x < 0 || hostHead.x >= gs || hostHead.y < 0 || hostHead.y >= gs) hostAlive = false
+  else if (snake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) hostAlive = false
+  else if (obstacles.some(o => o.x === hostHead.x && o.y === hostHead.y)) hostAlive = false
+  else if (opponentSnake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) hostAlive = false
 
-  let ate = false
+  if (guestHead.x < 0 || guestHead.x >= gs || guestHead.y < 0 || guestHead.y >= gs) guestAlive = false
+  else if (opponentSnake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) guestAlive = false
+  else if (obstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) guestAlive = false
+  else if (snake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) guestAlive = false
+
+  if (hostHead.x === guestHead.x && hostHead.y === guestHead.y) {
+    hostAlive = false
+    guestAlive = false
+  }
+
+  if (!hostAlive && !guestAlive) { endMpRound(-1); return }
+  if (!hostAlive) { endMpRound(1 - playerIndex.value); return }
+  if (!guestAlive) { endMpRound(playerIndex.value); return }
+
+  snake.unshift(hostHead)
+  opponentSnake.unshift(guestHead)
+
+  let hostAte = false
   for (let i = foods.length - 1; i >= 0; i--) {
-    if (Math.abs(head.x + 0.5 - foods[i].x) < 0.6 && Math.abs(head.y + 0.5 - foods[i].y) < 0.6) {
+    if (Math.abs(hostHead.x + 0.5 - foods[i].x) < 0.6 && Math.abs(hostHead.y + 0.5 - foods[i].y) < 0.6) {
       foods.splice(i, 1)
-      ate = true
+      hostAte = true
       score.value++
     }
   }
 
-  if (!ate) {
-    snake.pop()
-  } else {
-    placeFood()
+  let guestAte = false
+  for (let i = foods.length - 1; i >= 0; i--) {
+    if (Math.abs(guestHead.x + 0.5 - foods[i].x) < 0.6 && Math.abs(guestHead.y + 0.5 - foods[i].y) < 0.6) {
+      foods.splice(i, 1)
+      guestAte = true
+      opponentScore++
+    }
   }
 
+  if (!hostAte) snake.pop()
+  else placeFood()
+
+  if (!guestAte) opponentSnake.pop()
+  else placeFood()
+
   multiplayer.send({
-    type: 'player_state',
+    type: 'game_state',
     snake: snake.map(s => ({...s})),
     direction: { ...direction },
-    score: score.value,
+    opponentSnake: opponentSnake.map(s => ({...s})),
+    opponentDirection: { ...opponentDirection },
     foods: foods.map(f => ({...f})),
-    alive: true,
+    hostScore: score.value,
+    guestScore: opponentScore,
+    obstacles: obstacles.map(o => ({...o})),
   })
 }
 
@@ -939,7 +980,7 @@ function endMpRound(winner) {
   lastTime = 0
 
   if (winner === playerIndex.value) matchScore.value++
-  else opponentMatchScore.value++
+  else if (winner === 1 - playerIndex.value) opponentMatchScore.value++
 
   multiplayer.send({
     type: 'round_result',
@@ -979,6 +1020,7 @@ function resetMpRound() {
   direction = { x: 1, y: 0 }
   nextDirection = { x: 1, y: 0 }
   inputQueue = []
+  guestInputQueue = []
   foods = []
   obstaclesActive = false
   score.value = 0
@@ -1029,7 +1071,7 @@ function gameLoop(timestamp) {
   accumulator += delta
   while (accumulator >= gameInterval.value) {
     if (isMultiplayer.value) {
-      mpUpdate()
+      if (props.mode === 'host') mpUpdate()
     } else {
       update()
     }
@@ -1067,12 +1109,18 @@ function endGame() {
 
 function startGame() {
   if (isMultiplayer.value) {
-    gameStatus.value = "playing"
-    accumulator = 0
-    lastTime = 0
-    gameWinner = null
-    draw()
-    animFrameId = requestAnimationFrame(gameLoop)
+    if (props.mode === 'host') {
+      gameStatus.value = "playing"
+      accumulator = 0
+      lastTime = 0
+      gameWinner = null
+      draw()
+      animFrameId = requestAnimationFrame(gameLoop)
+    } else {
+      gameStatus.value = "playing"
+      gameWinner = null
+      draw()
+    }
     return
   }
   initGame()
@@ -1121,10 +1169,14 @@ function handleKeydown(e) {
   if (!newDir) return
 
   if (isMultiplayer.value) {
-    const lastDir = inputQueue.length > 0 ? inputQueue[inputQueue.length - 1] : direction
-    if (newDir.x !== -lastDir.x || newDir.y !== -lastDir.y) {
-      if (inputQueue.length < 2) {
-        inputQueue.push(newDir)
+    if (props.mode === 'guest') {
+      multiplayer.send({ type: 'input', direction: newDir })
+    } else {
+      const lastDir = inputQueue.length > 0 ? inputQueue[inputQueue.length - 1] : direction
+      if (newDir.x !== -lastDir.x || newDir.y !== -lastDir.y) {
+        if (inputQueue.length < 2) {
+          inputQueue.push(newDir)
+        }
       }
     }
     return
@@ -1188,12 +1240,27 @@ function setupMultiplayer() {
         obstacles: obstacles.map(o => ({...o})),
         gridSize: GRID_SIZE.value,
       })
-    } else if (data.type === 'player_state') {
-      opponentSnake = data.snake.map(s => ({...s}))
-      opponentDirection = { ...data.direction }
-      opponentScore = data.score
-      opponentFoods = data.foods.map(f => ({...f}))
-      opponentAlive = data.alive
+    } else if (data.type === 'game_state') {
+      if (props.mode === 'guest') {
+        snake = data.opponentSnake.map(s => ({...s}))
+        direction = { ...data.opponentDirection }
+        opponentSnake = data.snake.map(s => ({...s}))
+        opponentDirection = { ...data.direction }
+        foods = data.foods.map(f => ({...f}))
+        obstacles = data.obstacles.map(o => ({...o}))
+        score.value = data.guestScore
+        opponentScore = data.hostScore
+        draw()
+      }
+    } else if (data.type === 'input') {
+      if (props.mode === 'host') {
+        const lastDir = guestInputQueue.length > 0 ? guestInputQueue[guestInputQueue.length - 1] : opponentDirection
+        if (data.direction.x !== -lastDir.x || data.direction.y !== -lastDir.y) {
+          if (guestInputQueue.length < 2) {
+            guestInputQueue.push(data.direction)
+          }
+        }
+      }
     } else if (data.type === 'round_result') {
       matchScore.value = data.opponentMatchScore
       opponentMatchScore.value = data.matchScore
