@@ -394,11 +394,11 @@ function initGame() {
     score.value = 0
 
     opponentSnake = [
-      { x: Math.floor(gs / 4), y: Math.floor(gs / 2) },
-      { x: Math.floor(gs / 4) - 1, y: Math.floor(gs / 2) },
-      { x: Math.floor(gs / 4) - 2, y: Math.floor(gs / 2) },
+      { x: Math.floor(3 * gs / 4), y: Math.floor(gs / 2) },
+      { x: Math.floor(3 * gs / 4) + 1, y: Math.floor(gs / 2) },
+      { x: Math.floor(3 * gs / 4) + 2, y: Math.floor(gs / 2) },
     ]
-    opponentDirection = { x: 1, y: 0 }
+    opponentDirection = { x: -1, y: 0 }
     opponentFoods = []
     opponentScore = 0
     opponentAlive = true
@@ -1074,11 +1074,11 @@ function resetMpRound() {
   score.value = 0
   opponentScore = 0
   opponentSnake = [
-    { x: Math.floor(gs / 4), y: Math.floor(gs / 2) },
-    { x: Math.floor(gs / 4) - 1, y: Math.floor(gs / 2) },
-    { x: Math.floor(gs / 4) - 2, y: Math.floor(gs / 2) },
+    { x: Math.floor(3 * gs / 4), y: Math.floor(gs / 2) },
+    { x: Math.floor(3 * gs / 4) + 1, y: Math.floor(gs / 2) },
+    { x: Math.floor(3 * gs / 4) + 2, y: Math.floor(gs / 2) },
   ]
-  opponentDirection = { x: 1, y: 0 }
+  opponentDirection = { x: -1, y: 0 }
   opponentFoods = []
   opponentAlive = true
   opponentPrevSnake = []
