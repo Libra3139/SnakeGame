@@ -15,21 +15,22 @@ async function createRoom() {
   connecting.value = true
   error.value = ''
   lobbyMode.value = 'host'
+  multiplayer.onConnection(() => {
+    emit('startMultiplayerHost')
+  })
+  multiplayer.onData((data) => {
+    if (data.type === 'start_game') {
+      emit('startMultiplayerHost')
+    }
+  })
+  multiplayer.onDisconnect(() => {
+    error.value = 'Opponent disconnected'
+    stopLobby()
+  })
+
   try {
     const id = await multiplayer.createRoom()
     myPeerId.value = id
-    multiplayer.onConnection(() => {
-      emit('startMultiplayerHost')
-    })
-    multiplayer.onData((data) => {
-      if (data.type === 'start_game') {
-        emit('startMultiplayerHost')
-      }
-    })
-    multiplayer.onDisconnect(() => {
-      error.value = 'Opponent disconnected'
-      stopLobby()
-    })
   } catch (e) {
     error.value = 'Failed to create room: ' + e.message
     lobbyMode.value = ''

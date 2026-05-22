@@ -14,6 +14,7 @@ export function createRoom() {
     peer.on('open', (id) => {
       _isHost = true
       _myPeerId = id
+      resolve(id)
       peer.on('connection', (connection) => {
         conn = connection
         conn.on('data', (data) => {
@@ -23,7 +24,6 @@ export function createRoom() {
           if (_onDisconnectCb) _onDisconnectCb()
         })
         if (_onConnCb) _onConnCb()
-        resolve(id)
       })
     })
     peer.on('error', (err) => reject(err))
