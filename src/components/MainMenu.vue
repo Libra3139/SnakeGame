@@ -287,7 +287,7 @@ function stopLobby() {
 }
 
 .menu-title {
-  font-size: 4rem;
+  font-size: clamp(2rem, 8vw, 4rem);
   margin: 0;
   background: linear-gradient(135deg, #4ecdc4, #44a8a0);
   -webkit-background-clip: text;
@@ -306,7 +306,7 @@ function stopLobby() {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  width: 320px;
+  width: min(320px, 85vw);
 }
 
 .menu-btn {
@@ -583,13 +583,13 @@ function stopLobby() {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 220px;
+  width: clamp(180px, 20vw, 220px);
   background: rgba(15, 15, 35, 0.92);
   border: 1px solid rgba(78, 205, 196, 0.2);
   border-right: none;
   border-radius: 12px 0 0 12px;
   backdrop-filter: blur(12px);
-  padding: 16px;
+  padding: clamp(12px, 2vw, 16px);
   transition: width 0.3s ease, padding 0.3s ease;
   overflow: hidden;
   z-index: 100;
@@ -674,5 +674,21 @@ function stopLobby() {
   background: rgba(78, 205, 196, 0.15);
   padding: 2px 6px;
   border-radius: 4px;
+}
+
+@media (max-width: 600px) {
+  .multiplayer-panel {
+    padding: 16px;
+  }
+  .mp-rooms {
+    max-height: 150px;
+  }
+  .mm-player-list-panel {
+    width: clamp(140px, 40vw, 180px);
+  }
+  .mm-player-list-panel.collapsed {
+    width: 36px;
+    padding: 12px 4px;
+  }
 }
 </style>

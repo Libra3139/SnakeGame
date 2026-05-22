@@ -1840,7 +1840,7 @@ onUnmounted(() => {
 }
 
 .title {
-  font-size: 2.5rem;
+  font-size: clamp(1.5rem, 5vw, 2.5rem);
   margin: 0;
   background: linear-gradient(135deg, #4ecdc4, #44a8a0);
   -webkit-background-clip: text;
@@ -1918,31 +1918,33 @@ onUnmounted(() => {
 }
 
 .value {
-  font-size: 1.5rem;
+  font-size: clamp(1.1rem, 3vw, 1.5rem);
   font-weight: bold;
   color: #4ecdc4;
 }
 
 .settings-panel {
-  width: 320px;
+  width: clamp(220px, 25vw, 320px);
   background: rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  padding: 20px;
+  padding: clamp(12px, 2vw, 20px);
   backdrop-filter: blur(10px);
   align-self: flex-start;
+  flex-shrink: 0;
 }
 
 .leaderboard-panel {
-  width: 360px;
+  width: clamp(260px, 28vw, 360px);
   background: rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  padding: 15px;
+  padding: clamp(10px, 2vw, 15px);
   backdrop-filter: blur(10px);
   align-self: flex-start;
   max-height: calc(100vh - 120px);
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.15) transparent;
+  flex-shrink: 0;
 }
 
 .leaderboard-panel::-webkit-scrollbar {
@@ -1962,6 +1964,7 @@ onUnmounted(() => {
   gap: 20px;
   width: 100%;
   max-width: 1200px;
+  padding: 0 10px;
 }
 
 .game-center {
@@ -1969,6 +1972,17 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 15px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.canvas-wrapper {
+  max-width: 100%;
+  overflow: hidden;
+}
+.canvas-wrapper canvas {
+  max-width: 100%;
+  height: auto;
 }
 
 .settings-panel h3,
@@ -1995,8 +2009,8 @@ onUnmounted(() => {
 }
 
 .btn {
-  padding: 10px 24px;
-  font-size: 1rem;
+  padding: clamp(8px, 1.5vw, 10px) clamp(16px, 3vw, 24px);
+  font-size: clamp(0.85rem, 2vw, 1rem);
   font-weight: bold;
   border: none;
   border-radius: 8px;
@@ -2411,8 +2425,7 @@ canvas {
 }
 
 .match-rematch-btn {
-  padding: 14px 50px;
-  font-size: 1.1rem;
+  padding: clamp(10px, 2vw, 14px) clamp(30px, 6vw, 50px);
 }
 
 .rematch-status {
@@ -2496,9 +2509,7 @@ canvas {
 }
 
 .ready-btn {
-  padding: 14px 60px;
-  font-size: 1.2rem;
-  animation: readyPulse 1.5s ease-in-out infinite;
+  padding: clamp(10px, 2vw, 14px) clamp(30px, 6vw, 60px);
 }
 
 @keyframes readyPulse {
@@ -2539,11 +2550,7 @@ canvas {
 }
 
 .overlay-text {
-  font-size: 1.25rem;
-  color: #ffffff;
-  background: rgba(78, 205, 196, 0.8);
-  padding: 12px 24px;
-  border-radius: 8px;
+  padding: clamp(8px, 2vw, 12px) clamp(16px, 4vw, 24px);
 }
 
 .controls {
@@ -2566,14 +2573,15 @@ kbd {
 
 .player-list-panel {
   position: relative;
-  width: 260px;
+  width: clamp(180px, 20vw, 260px);
   background: rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   backdrop-filter: blur(10px);
-  padding: 16px;
+  padding: clamp(10px, 2vw, 16px);
   transition: width 0.3s ease, padding 0.3s ease;
   align-self: flex-start;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .player-list-panel.collapsed {
   width: 40px;
@@ -2672,8 +2680,35 @@ kbd {
   .settings-panel,
   .leaderboard-panel,
   .player-list-panel {
-    width: 500px;
-    max-width: 92vw;
+    width: min(500px, 92vw);
+    align-self: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .score-board {
+    gap: 12px;
+    padding: 8px 12px;
+  }
+  .multiplayer-info {
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .mp-score {
+    gap: 16px;
+  }
+  .top-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 8px;
+  }
+  .player-list-panel {
+    width: min(200px, 80vw);
+  }
+  .player-list-panel.collapsed {
+    width: 36px;
+    padding: 12px 4px;
   }
 }
 </style>
