@@ -1121,14 +1121,10 @@ function handleKeydown(e) {
   if (!newDir) return
 
   if (isMultiplayer.value) {
-    if (props.mode === 'guest') {
-      multiplayer.send({ type: 'input', direction: newDir })
-    } else {
-      const lastDir = inputQueue.length > 0 ? inputQueue[inputQueue.length - 1] : multiDirections[0]
-      if (newDir.x !== -lastDir.x || newDir.y !== -lastDir.y) {
-        if (inputQueue.length < 2) {
-          inputQueue.push(newDir)
-        }
+    const lastDir = inputQueue.length > 0 ? inputQueue[inputQueue.length - 1] : direction
+    if (newDir.x !== -lastDir.x || newDir.y !== -lastDir.y) {
+      if (inputQueue.length < 2) {
+        inputQueue.push(newDir)
       }
     }
     return
