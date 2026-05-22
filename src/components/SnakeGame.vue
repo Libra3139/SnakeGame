@@ -1857,7 +1857,7 @@ onUnmounted(() => {
 }
 
 .settings-panel {
-  width: 280px;
+  width: 320px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 20px;
@@ -1866,7 +1866,7 @@ onUnmounted(() => {
 }
 
 .leaderboard-panel {
-  width: 320px;
+  width: 360px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 15px;
@@ -2499,7 +2499,7 @@ kbd {
 
 .player-list-panel {
   position: relative;
-  width: 200px;
+  width: 260px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   backdrop-filter: blur(10px);
@@ -2598,8 +2598,8 @@ kbd {
   .settings-panel,
   .leaderboard-panel,
   .player-list-panel {
-    width: 400px;
-    max-width: 90vw;
+    width: 500px;
+    max-width: 92vw;
   }
 }
 </style>

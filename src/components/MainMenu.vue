@@ -13,6 +13,7 @@ const error = ref('')
 const lobbyMode = ref('')
 const roomList = ref([])
 const fetchingRooms = ref(false)
+const playerListCollapsed = ref(false)
 
 let _roomListTimer = null
 let _roomPingTimer = null
@@ -38,8 +39,6 @@ onUnmounted(() => {
   clearInterval(_roomListTimer)
   clearInterval(_roomPingTimer)
 })
-
-const showPlayerName = ref(false)
 
 async function refreshRoomList() {
   fetchingRooms.value = true
@@ -169,6 +168,27 @@ function stopLobby() {
       </div>
 
       <div v-if="error" class="mp-error">{{ error }}</div>
+    </div>
+
+    <div class="mm-player-list-panel" :class="{ collapsed: playerListCollapsed }">
+      <button class="mm-pl-toggle" @click="playerListCollapsed = !playerListCollapsed">
+        {{ playerListCollapsed ? '◀' : '▶' }}
+      </button>
+      <div v-show="!playerListCollapsed" class="mm-pl-content">
+        <h3>Players</h3>
+        <div class="mm-pl-item mm-pl-you">
+          <span class="mm-pl-dot"></span>
+          <span class="mm-pl-name">{{ playerName }}</span>
+          <span class="mm-pl-tag">You</span>
+        </div>
+        <div v-for="room in roomList" :key="room.playerUUID" class="mm-pl-item mm-pl-other">
+          <span class="mm-pl-dot"></span>
+          <span class="mm-pl-name">{{ room.playerName }}</span>
+        </div>
+        <div v-if="roomList.length === 0 && showMultiplayer" class="mm-pl-item mm-pl-empty">
+          <span class="mm-pl-name">No other players</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -497,5 +517,103 @@ function stopLobby() {
   border-radius: 20px;
   display: inline-block;
   margin: 8px auto 0;
+}
+
+.mm-player-list-panel {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 220px;
+  background: rgba(15, 15, 35, 0.92);
+  border: 1px solid rgba(78, 205, 196, 0.2);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  backdrop-filter: blur(12px);
+  padding: 16px;
+  transition: width 0.3s ease, padding 0.3s ease;
+  overflow: hidden;
+  z-index: 100;
+}
+.mm-player-list-panel.collapsed {
+  width: 40px;
+  padding: 16px 8px;
+}
+.mm-pl-toggle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #aaa;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  z-index: 2;
+}
+.mm-player-list-panel.collapsed .mm-pl-toggle {
+  left: 6px;
+}
+.mm-pl-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.mm-pl-content h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: #4ecdc4;
+}
+.mm-pl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+.mm-pl-you {
+  background: rgba(78, 205, 196, 0.1);
+  border: 1px solid rgba(78, 205, 196, 0.25);
+}
+.mm-pl-other {
+  background: rgba(255, 107, 179, 0.1);
+  border: 1px solid rgba(255, 107, 179, 0.25);
+}
+.mm-pl-empty {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+.mm-pl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ecdc4;
+  flex-shrink: 0;
+}
+.mm-pl-other .mm-pl-dot {
+  background: #ff6bb3;
+}
+.mm-pl-empty .mm-pl-dot {
+  background: #555;
+}
+.mm-pl-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mm-pl-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 </style>
