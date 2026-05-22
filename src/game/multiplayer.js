@@ -31,7 +31,7 @@ const LOCAL_ROOMS_KEY = 'snake-local-rooms'
 const ROOM_TTL = 30000
 
 const PLAYER_PRESENCE_KEY = 'snake-player-presence'
-const PRESENCE_TTL = 15000
+const PRESENCE_TTL = 5000
 
 function getLocalRoomsRaw() {
   try {
