@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import * as multiplayer from '../game/multiplayer.js'
 
 const emit = defineEmits(['startSingle', 'startMultiplayerHost', 'startMultiplayerGuest', 'back'])
@@ -15,6 +15,11 @@ const roomList = ref([])
 const activePlayers = ref([])
 const fetchingRooms = ref(false)
 const playerListCollapsed = ref(false)
+const chatMessages = ref([])
+const chatInput = ref('')
+const chatPanelCollapsed = ref(true)
+const chatBoxRef = ref(null)
+let _chatTimer = null
 const lobbyStarted = ref(false)
 const lobbyOnline = ref(false)
 
@@ -43,12 +48,24 @@ onMounted(() => {
     multiplayer.updatePlayerPresencePing()
     refreshActivePlayers()
   }, 5000)
+  chatMessages.value = multiplayer.getChatMessages()
+  _chatTimer = setInterval(() => {
+    const msgs = multiplayer.getChatMessages()
+    if (msgs.length !== chatMessages.value.length) {
+      chatMessages.value = msgs
+      nextTick(() => {
+        const el = chatBoxRef.value
+        if (el) el.scrollTop = el.scrollHeight
+      })
+    }
+  }, 500)
 })
 
 onUnmounted(() => {
   clearInterval(_roomListTimer)
   clearInterval(_roomPingTimer)
   clearInterval(_presenceTimer)
+  clearInterval(_chatTimer)
 })
 
 async function refreshRoomList() {
@@ -132,6 +149,18 @@ function stopLobby() {
   connecting.value = false
   error.value = ''
   myPeerId.value = ''
+}
+
+function sendChat() {
+  const text = chatInput.value.trim()
+  if (!text) return
+  multiplayer.sendChatMessage(playerName.value, text)
+  chatInput.value = ''
+  chatMessages.value = multiplayer.getChatMessages()
+  nextTick(() => {
+    const el = chatBoxRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
 }
 </script>
 
@@ -231,6 +260,31 @@ function stopLobby() {
       </div>
 
       <div v-if="error" class="mp-error">{{ error }}</div>
+    </div>
+
+    <div class="mm-chat-panel" :class="{ collapsed: chatPanelCollapsed }">
+      <button class="mm-pl-toggle" @click="chatPanelCollapsed = !chatPanelCollapsed">
+        {{ chatPanelCollapsed ? '◀' : '▶' }}
+      </button>
+      <div v-show="!chatPanelCollapsed" class="mm-pl-content">
+        <h3>Chat</h3>
+        <div class="chat-messages" ref="chatBoxRef">
+          <div v-for="(msg, i) in chatMessages" :key="msg.id || i" class="chat-msg">
+            <span class="chat-sender">{{ msg.sender }}</span>
+            <span class="chat-text">{{ msg.text }}</span>
+          </div>
+          <div v-if="chatMessages.length === 0" class="chat-empty">No messages yet</div>
+        </div>
+        <div class="chat-input-row">
+          <input
+            v-model="chatInput"
+            class="chat-input"
+            placeholder="Type a message..."
+            @keyup.enter="sendChat"
+          />
+          <button @click="sendChat" class="chat-send-btn">Send</button>
+        </div>
+      </div>
     </div>
 
     <div class="mm-player-list-panel" :class="{ collapsed: playerListCollapsed }">
@@ -587,8 +641,7 @@ function stopLobby() {
 .mm-player-list-panel {
   position: fixed;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 80px;
   width: clamp(180px, 20vw, 220px);
   background: rgba(15, 15, 35, 0.92);
   border: 1px solid rgba(78, 205, 196, 0.2);
@@ -682,19 +735,127 @@ function stopLobby() {
   border-radius: 4px;
 }
 
+.mm-chat-panel {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: clamp(220px, 22vw, 300px);
+  background: rgba(15, 15, 35, 0.95);
+  border: 1px solid rgba(78, 205, 196, 0.2);
+  border-right: none;
+  border-bottom: none;
+  border-radius: 0 12px 0 0;
+  backdrop-filter: blur(12px);
+  padding: clamp(12px, 2vw, 16px);
+  transition: width 0.3s ease, padding 0.3s ease, height 0.3s ease;
+  overflow: hidden;
+  z-index: 100;
+  max-height: 300px;
+}
+.mm-chat-panel.collapsed {
+  width: 40px;
+  height: 40px;
+  padding: 12px 8px;
+  border-radius: 0;
+}
+.mm-chat-panel .mm-pl-toggle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #aaa;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  z-index: 2;
+}
+.mm-chat-panel.collapsed .mm-pl-toggle {
+  left: 6px;
+}
+.mm-chat-panel .mm-pl-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.chat-messages {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 30px 0 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 4px;
+}
+.chat-sender {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #4ecdc4;
+}
+.chat-text {
+  font-size: 0.8rem;
+  color: #ddd;
+  word-break: break-word;
+}
+.chat-empty {
+  font-size: 0.75rem;
+  color: #666;
+  text-align: center;
+  padding: 30px 0;
+}
+.chat-input-row {
+  display: flex;
+  gap: 4px;
+}
+.chat-input {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 0.8rem;
+  outline: none;
+  min-width: 0;
+}
+.chat-input:focus {
+  border-color: #4ecdc4;
+}
+.chat-input::placeholder {
+  color: #666;
+}
+.chat-send-btn {
+  padding: 6px 10px;
+  background: #4ecdc4;
+  color: #1a1a2e;
+  font-weight: 700;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.chat-send-btn:hover {
+  background: #3dbdb5;
+}
+
 @media (max-width: 600px) {
-  .multiplayer-panel {
-    padding: 16px;
+  .mm-chat-panel {
+    width: clamp(160px, 45vw, 220px);
+    max-height: 220px;
   }
-  .mp-rooms {
-    max-height: 150px;
-  }
-  .mm-player-list-panel {
-    width: clamp(140px, 40vw, 180px);
-  }
-  .mm-player-list-panel.collapsed {
-    width: 36px;
-    padding: 12px 4px;
+  .chat-messages {
+    max-height: 120px;
   }
 }
 </style>

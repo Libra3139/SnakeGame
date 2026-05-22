@@ -421,3 +421,27 @@ export function generateSeed() {
 export function getCurrentSeed() {
   return _currentSeed
 }
+
+const CHAT_KEY = 'snake-chat-messages'
+
+export function getChatMessages() {
+  try {
+    const data = localStorage.getItem(CHAT_KEY)
+    return data ? JSON.parse(data) : []
+  } catch { return [] }
+}
+
+export function sendChatMessage(sender, text) {
+  const msgs = getChatMessages()
+  const msg = { sender, text, time: Date.now(), id: Date.now() + Math.random() }
+  msgs.push(msg)
+  if (msgs.length > 100) msgs.splice(0, msgs.length - 100)
+  localStorage.setItem(CHAT_KEY, JSON.stringify(msgs))
+  localStorage.setItem('snake-chat-ts', Date.now().toString())
+  return msg
+}
+
+export function clearChatMessages() {
+  localStorage.removeItem(CHAT_KEY)
+  localStorage.removeItem('snake-chat-ts')
+}

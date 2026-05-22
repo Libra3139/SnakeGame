@@ -13,7 +13,6 @@ const isMultiplayer = computed(() => props.mode === 'host' || props.mode === 'gu
 const playerIndex = computed(() => props.mode === 'host' ? 0 : (props.mode === 'guest' ? 1 : 0))
 
 const canvas = ref(null)
-const chatBoxRef = ref(null)
 const score = ref(0)
 const gameStatus = ref("idle")
 const peerId = ref('')
@@ -21,9 +20,6 @@ const playerName = ref('')
 const opponentName = ref('')
 const playerListCollapsed = ref(false)
 const activePlayers = ref([])
-const chatMessages = ref([])
-const chatInput = ref('')
-const chatPanelCollapsed = ref(true)
 let _presenceTimer = null
 const myReady = ref(false)
 const opponentReady = ref(false)
@@ -1353,18 +1349,6 @@ function refreshActivePlayers() {
   }
 }
 
-function sendChat() {
-  const text = chatInput.value.trim()
-  if (!text) return
-  chatMessages.value.push({
-    sender: playerName.value || 'You',
-    text,
-    time: Date.now(),
-  })
-  multiplayer.send({ type: 'chat', sender: playerName.value || 'Me', text })
-  chatInput.value = ''
-}
-
 function startCountdown(count) {
   gameStatus.value = 'countdown'
   countdownValue.value = count
@@ -1487,12 +1471,6 @@ function setupMultiplayer() {
       }
     } else if (data.type === 'rematch_accept') {
       startNewMatch()
-    } else if (data.type === 'chat') {
-      chatMessages.value.push({
-        sender: data.sender,
-        text: data.text,
-        time: Date.now(),
-      })
     }
   })
 
@@ -1822,31 +1800,6 @@ onUnmounted(() => {
             </div>
             <div v-if="activePlayers.length <= 1 && !opponentName" class="pl-item pl-empty">
               <span class="pl-name">No other players</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="chat-panel" :class="{ collapsed: chatPanelCollapsed }">
-          <button class="pl-toggle" @click="chatPanelCollapsed = !chatPanelCollapsed">
-            {{ chatPanelCollapsed ? '◀' : '▶' }}
-          </button>
-          <div v-show="!chatPanelCollapsed" class="pl-content">
-            <h3>Chat</h3>
-            <div class="chat-messages" ref="chatBoxRef">
-              <div v-for="(msg, i) in chatMessages" :key="i" class="chat-msg">
-                <span class="chat-sender">{{ msg.sender }}</span>
-                <span class="chat-text">{{ msg.text }}</span>
-              </div>
-              <div v-if="chatMessages.length === 0" class="chat-empty">No messages yet</div>
-            </div>
-            <div class="chat-input-row">
-              <input
-                v-model="chatInput"
-                class="chat-input"
-                placeholder="Type a message..."
-                @keyup.enter="sendChat"
-              />
-              <button @click="sendChat" class="btn btn-tiny chat-send-btn">Send</button>
             </div>
           </div>
         </div>
@@ -2647,79 +2600,6 @@ kbd {
   position: sticky;
   top: 10px;
 }
-
-.chat-panel {
-  position: relative;
-  width: 100%;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-  padding: clamp(10px, 2vw, 16px);
-  transition: width 0.3s ease, padding 0.3s ease;
-  overflow: hidden;
-}
-.chat-panel.collapsed {
-  width: 40px;
-  padding: 16px 8px;
-}
-.chat-messages {
-  max-height: 200px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 8px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
-}
-.chat-msg {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-  background: rgba(255,255,255,0.04);
-  border-radius: 6px;
-}
-.chat-sender {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #4ecdc4;
-}
-.chat-text {
-  font-size: 0.85rem;
-  color: #ddd;
-  word-break: break-word;
-}
-.chat-empty {
-  font-size: 0.8rem;
-  color: #666;
-  text-align: center;
-  padding: 20px 0;
-}
-.chat-input-row {
-  display: flex;
-  gap: 6px;
-}
-.chat-input {
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-  font-size: 0.85rem;
-  outline: none;
-}
-.chat-input:focus {
-  border-color: #4ecdc4;
-}
-.chat-input::placeholder {
-  color: #666;
-}
-.chat-send-btn {
-  padding: 8px 12px !important;
-  font-size: 0.8rem !important;
-}
 .player-list-panel.collapsed {
   width: 40px;
   padding: 16px 8px;
@@ -2824,10 +2704,6 @@ kbd {
     width: min(500px, 92vw);
     position: static;
   }
-  .player-list-panel,
-  .chat-panel {
-    flex: 1;
-  }
 }
 
 @media (max-width: 600px) {
@@ -2851,9 +2727,6 @@ kbd {
   .right-sidebar {
     flex-direction: column;
     width: min(320px, 92vw);
-  }
-  .chat-messages {
-    max-height: 120px;
   }
 }
 </style>
