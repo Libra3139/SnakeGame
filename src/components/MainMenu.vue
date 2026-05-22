@@ -59,6 +59,11 @@ onMounted(() => {
       })
     }
   }, 500)
+  multiplayer.connectToChatLobby().then(() => {
+    multiplayer.onLobbyChat((data) => {
+      multiplayer.sendChatMessage(data.sender, data.text)
+    })
+  }).catch(() => {})
 })
 
 onUnmounted(() => {
@@ -66,6 +71,7 @@ onUnmounted(() => {
   clearInterval(_roomPingTimer)
   clearInterval(_presenceTimer)
   clearInterval(_chatTimer)
+  multiplayer.disconnectFromChatLobby()
 })
 
 async function refreshRoomList() {
@@ -155,6 +161,7 @@ function sendChat() {
   const text = chatInput.value.trim()
   if (!text) return
   multiplayer.sendChatMessage(playerName.value, text)
+  multiplayer.sendLobbyChat(playerName.value, text)
   chatInput.value = ''
   chatMessages.value = multiplayer.getChatMessages()
   nextTick(() => {
@@ -739,24 +746,34 @@ function sendChat() {
   position: fixed;
   right: 0;
   bottom: 0;
-  width: clamp(220px, 22vw, 300px);
+  width: clamp(280px, 26vw, 380px);
   background: rgba(15, 15, 35, 0.95);
   border: 1px solid rgba(78, 205, 196, 0.2);
   border-right: none;
   border-bottom: none;
   border-radius: 0 12px 0 0;
   backdrop-filter: blur(12px);
-  padding: clamp(12px, 2vw, 16px);
-  transition: width 0.3s ease, padding 0.3s ease, height 0.3s ease;
+  padding: clamp(14px, 2vw, 20px);
+  transition: width 0.3s ease, padding 0.3s ease;
   overflow: hidden;
   z-index: 100;
-  max-height: 300px;
+  max-height: 400px;
 }
 .mm-chat-panel.collapsed {
   width: 40px;
   height: 40px;
   padding: 12px 8px;
   border-radius: 0;
+}
+.chat-messages {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 30px 0 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 .mm-chat-panel .mm-pl-toggle {
   position: absolute;
@@ -778,16 +795,6 @@ function sendChat() {
 .mm-chat-panel .mm-pl-toggle:hover {
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
-}
-.chat-messages {
-  max-height: 180px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 30px 0 8px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 .chat-msg {
   display: flex;
@@ -850,12 +857,25 @@ function sendChat() {
 }
 
 @media (max-width: 600px) {
+  .multiplayer-panel {
+    padding: 16px;
+  }
+  .mp-rooms {
+    max-height: 150px;
+  }
+  .mm-player-list-panel {
+    width: clamp(140px, 40vw, 180px);
+  }
+  .mm-player-list-panel.collapsed {
+    width: 36px;
+    padding: 12px 4px;
+  }
   .mm-chat-panel {
-    width: clamp(160px, 45vw, 220px);
-    max-height: 220px;
+    width: clamp(200px, 50vw, 280px);
+    max-height: 300px;
   }
   .chat-messages {
-    max-height: 120px;
+    max-height: 180px;
   }
 }
 </style>

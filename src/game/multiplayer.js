@@ -123,6 +123,8 @@ let _lobbyConn = null
 let _onRoomListCb = null
 let _lobbyCleanupTimer = null
 let _lobbyHeartbeat = null
+const _chatPeers = new Set()
+let _onLobbyChatCb = null
 
 export function startLobby() {
   return new Promise((resolve, reject) => {
@@ -146,6 +148,8 @@ export function startLobby() {
       reject(err)
     })
     _lobbyPeer.on('connection', (c) => {
+      _chatPeers.add(c.peer)
+      c.on('close', () => { _chatPeers.delete(c.peer) })
       c.on('data', (data) => {
         switch (data.type) {
           case 'register':
@@ -176,6 +180,19 @@ export function startLobby() {
               if (room.connPeer === c.peer) { room.lastPing = Date.now(); break }
             }
             c.send({ type: 'pong' })
+            break
+          case 'chat':
+            for (const peerId of _chatPeers) {
+              if (peerId !== c.peer) {
+                try {
+                  const conn = _lobbyPeer.connect(peerId, { reliable: true })
+                  conn.on('open', () => {
+                    conn.send({ type: 'chat', sender: data.sender, text: data.text })
+                    conn.close()
+                  })
+                } catch {}
+              }
+            }
             break
         }
       })
@@ -254,6 +271,46 @@ export function fetchRooms() {
     })
     p.on('error', () => reject(new Error('Failed to connect')))
   })
+}
+
+let _chatLobbyPeer = null
+let _chatLobbyConn = null
+
+export function connectToChatLobby() {
+  if (_chatLobbyConn) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    _chatLobbyPeer = new Peer()
+    _chatLobbyPeer.on('open', () => {
+      const c = _chatLobbyPeer.connect(LOBBY_ID, { reliable: true })
+      c.on('open', () => {
+        _chatLobbyConn = c
+        resolve()
+      })
+      c.on('error', () => { reject(new Error('Chat lobby unavailable')) })
+      c.on('data', (data) => {
+        if (data.type === 'chat' && _onLobbyChatCb) {
+          _onLobbyChatCb(data)
+        }
+      })
+      setTimeout(() => { if (!_chatLobbyConn) { reject(new Error('Chat lobby timeout')) } }, 5000)
+    })
+    _chatLobbyPeer.on('error', () => reject(new Error('Failed to connect')))
+  })
+}
+
+export function disconnectFromChatLobby() {
+  if (_chatLobbyConn) { _chatLobbyConn.close(); _chatLobbyConn = null }
+  if (_chatLobbyPeer) { _chatLobbyPeer.destroy(); _chatLobbyPeer = null }
+}
+
+export function sendLobbyChat(sender, text) {
+  if (_chatLobbyConn && _chatLobbyConn.open) {
+    _chatLobbyConn.send({ type: 'chat', sender, text })
+  }
+}
+
+export function onLobbyChat(cb) {
+  _onLobbyChatCb = cb
 }
 
 export function onRoomList(cb) {
