@@ -25,13 +25,13 @@ export function startLobby() {
         const now = Date.now()
         let changed = false
         for (const [key, room] of rooms) {
-          if (now - (room.lastPing || room.joinedAt) > 15000) {
+          if (now - (room.lastPing || room.joinedAt) > 8000) {
             rooms.delete(key)
             changed = true
           }
         }
         if (changed) broadcastRooms()
-      }, 10000)
+      }, 5000)
       resolve()
     })
     _lobbyPeer.on('error', (err) => {
@@ -46,30 +46,35 @@ export function startLobby() {
               peerId: data.peerId || c.peer,
               name: data.name || 'Snake Game',
               joinedAt: Date.now(),
-              lastPing: Date.now()
+              lastPing: Date.now(),
+              connPeer: c.peer
             })
             c.send({ type: 'registered', ok: true })
             broadcastRooms()
             break
           case 'unregister':
-            rooms.delete(c.peer)
-            broadcastRooms()
+            for (const [key, room] of rooms) {
+              if (room.connPeer === c.peer) { rooms.delete(key); broadcastRooms(); break }
+            }
             break
           case 'list':
             c.send({
               type: 'room_list',
-              rooms: Array.from(rooms.values()).filter(r => Date.now() - (r.lastPing || r.joinedAt) <= 15000)
+              rooms: Array.from(rooms.values()).filter(r => Date.now() - (r.lastPing || r.joinedAt) <= 8000)
             })
             break
           case 'ping':
-            const room = rooms.get(c.peer)
-            if (room) room.lastPing = Date.now()
+            for (const room of rooms.values()) {
+              if (room.connPeer === c.peer) { room.lastPing = Date.now(); break }
+            }
             c.send({ type: 'pong' })
             break
         }
       })
       c.on('close', () => {
-        if (rooms.delete(c.peer)) broadcastRooms()
+        for (const [key, room] of rooms) {
+          if (room.connPeer === c.peer) { rooms.delete(key); broadcastRooms(); break }
+        }
       })
     })
   })
@@ -99,7 +104,7 @@ export function registerWithLobby(hostPeerId) {
         _lobbyConn = { conn: c, peer: p }
         _lobbyHeartbeat = setInterval(() => {
           try { c.send({ type: 'ping' }) } catch {}
-        }, 5000)
+        }, 3000)
         resolve()
       })
       c.on('error', () => { p.destroy(); reject(new Error('Lobby unavailable')) })
