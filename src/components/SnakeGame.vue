@@ -375,6 +375,53 @@ function generateObstacles() {
   }
 }
 
+function generateMpObstacles() {
+  myObstacles = []
+  opponentObstacles = []
+  if (!enableObstacles.value) return
+
+  const gs = GRID_SIZE.value
+  const sizeCounts = { small: 3, medium: 5, large: 8 }
+  const count = sizeCounts[boardSize.value] || 5
+  const rand = seededRandom || Math
+
+  // Host's board obstacles (avoid host snake)
+  for (let i = 0; i < count; i++) {
+    let pos
+    let attempts = 0
+    do {
+      pos = {
+        x: Math.floor((rand.next ? rand.next() : Math.random()) * gs),
+        y: Math.floor((rand.next ? rand.next() : Math.random()) * gs)
+      }
+      attempts++
+    } while (attempts < 100 && (
+      snake.some(seg => seg.x === pos.x && seg.y === pos.y) ||
+      foods.some(f => Math.floor(f.x) === pos.x && Math.floor(f.y) === pos.y) ||
+      (Math.abs(pos.x - snake[0].x) < 3 && Math.abs(pos.y - snake[0].y) < 3)
+    ))
+    if (attempts < 100) myObstacles.push(pos)
+  }
+
+  // Guest's board obstacles (avoid guest snake)
+  for (let i = 0; i < count; i++) {
+    let pos
+    let attempts = 0
+    do {
+      pos = {
+        x: Math.floor((rand.next ? rand.next() : Math.random()) * gs),
+        y: Math.floor((rand.next ? rand.next() : Math.random()) * gs)
+      }
+      attempts++
+    } while (attempts < 100 && (
+      opponentSnake.some(seg => seg.x === pos.x && seg.y === pos.y) ||
+      foods.some(f => Math.floor(f.x) === pos.x && Math.floor(f.y) === pos.y) ||
+      (Math.abs(pos.x - opponentSnake[0].x) < 3 && Math.abs(pos.y - opponentSnake[0].y) < 3)
+    ))
+    if (attempts < 100) opponentObstacles.push(pos)
+  }
+}
+
 function placeFood(count) {
   for (let i = 0; i < (count || 1); i++) {
     if (foods.length >= MAX_FOODS) break
@@ -433,6 +480,7 @@ function initGame() {
     opponentObstacles = []
     pendingRocks = []
     placeFood()
+    if (props.mode === 'host') generateMpObstacles()
     return
   }
 
@@ -1192,6 +1240,7 @@ function resetMpRound() {
   opponentObstacles = []
   pendingRocks = []
   placeFood()
+  if (props.mode === 'host') generateMpObstacles()
   draw()
 }
 
