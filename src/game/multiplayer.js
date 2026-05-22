@@ -123,7 +123,9 @@ let _lobbyConn = null
 let _onRoomListCb = null
 let _lobbyCleanupTimer = null
 let _lobbyHeartbeat = null
-const _chatPeers = new Set()
+let _lobbyChatConns = new Map()
+let _lobbyChatPeer = null
+let _lobbyChatConn = null
 
 export function startLobby() {
   return new Promise((resolve, reject) => {
@@ -147,8 +149,13 @@ export function startLobby() {
       reject(err)
     })
     _lobbyPeer.on('connection', (c) => {
-      _chatPeers.add(c.peer)
-      c.on('close', () => { _chatPeers.delete(c.peer) })
+      _lobbyChatConns.set(c.peer, c)
+      c.on('close', () => {
+        _lobbyChatConns.delete(c.peer)
+        for (const [key, room] of rooms) {
+          if (room.connPeer === c.peer) { rooms.delete(key); broadcastRooms(); break }
+        }
+      })
       c.on('data', (data) => {
         switch (data.type) {
           case 'register':
@@ -181,23 +188,12 @@ export function startLobby() {
             c.send({ type: 'pong' })
             break
           case 'chat':
-            for (const peerId of _chatPeers) {
-              if (peerId !== c.peer) {
-                try {
-                  const conn = _lobbyPeer.connect(peerId, { reliable: true })
-                  conn.on('open', () => {
-                    conn.send({ type: 'chat', sender: data.sender, text: data.text })
-                    conn.close()
-                  })
-                } catch {}
+            for (const [peerId, conn] of _lobbyChatConns) {
+              if (peerId !== c.peer && conn.open) {
+                try { conn.send({ type: 'chat', sender: data.sender, text: data.text }) } catch {}
               }
             }
             break
-        }
-      })
-      c.on('close', () => {
-        for (const [key, room] of rooms) {
-          if (room.connPeer === c.peer) { rooms.delete(key); broadcastRooms(); break }
         }
       })
     })
@@ -208,6 +204,7 @@ export function stopLobby() {
   if (_lobbyCleanupTimer) { clearInterval(_lobbyCleanupTimer); _lobbyCleanupTimer = null }
   if (_lobbyPeer) { _lobbyPeer.destroy(); _lobbyPeer = null }
   rooms.clear()
+  _lobbyChatConns.clear()
 }
 
 const rooms = new Map()
@@ -289,7 +286,35 @@ function _cleanupRemotePlayers() {
 
 export function initChatRelay() {
   if (_chatRelayConn || _chatRelayPeer) return Promise.resolve()
-  return _tryConnectRelay().catch(() => _becomeChatRelay())
+  _tryConnectToLobbyChat()
+  return _tryConnectRelay().catch(() => _becomeChatRelay().catch(() => {
+    _tryConnectRelay()
+  }))
+}
+
+function _tryConnectToLobbyChat() {
+  if (_lobbyChatConn) return
+  const p = new Peer()
+  p.on('open', () => {
+    const c = p.connect(LOBBY_ID, { reliable: true })
+    c.on('open', () => {
+      _lobbyChatConn = c
+      _lobbyChatPeer = p
+      c.on('close', () => { _lobbyChatConn = null; _lobbyChatPeer = null })
+      c.on('data', (data) => {
+        if (data.type === 'chat' && _chatRelayCb) _chatRelayCb(data)
+        if (data.type === 'player_presence' && data.playerUUID !== _playerUUID) {
+          _remotePlayers.set(data.playerUUID, {
+            playerUUID: data.playerUUID,
+            playerName: data.playerName,
+            timestamp: Date.now()
+          })
+        }
+      })
+    })
+    c.on('error', () => { p.destroy() })
+  })
+  p.on('error', () => {})
 }
 
 function _tryConnectRelay() {
@@ -369,6 +394,14 @@ export function destroyChatRelay() {
     _chatRelayPeer.destroy()
     _chatRelayPeer = null
   }
+  if (_lobbyChatConn) {
+    _lobbyChatConn.close()
+    _lobbyChatConn = null
+  }
+  if (_lobbyChatPeer) {
+    _lobbyChatPeer.destroy()
+    _lobbyChatPeer = null
+  }
   _chatRelayConns.clear()
   _remotePlayers.clear()
 }
@@ -383,6 +416,9 @@ export function sendChatRelayMessage(sender, text) {
         try { conn.send({ type: 'chat', sender, text }) } catch {}
       }
     }
+  }
+  if (_lobbyChatConn && _lobbyChatConn.open) {
+    _lobbyChatConn.send({ type: 'chat', sender, text })
   }
 }
 
@@ -483,7 +519,7 @@ export function joinRoom(hostId) {
 
 export function send(data) {
   if (conn && conn.open) {
-    conn.send(data)
+    try { conn.send(data) } catch {}
   }
 }
 

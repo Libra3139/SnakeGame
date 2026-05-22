@@ -272,6 +272,8 @@ function addScoreToLeaderboard(newScore) {
 
 function syncSettingsToGuest() {
   if (props.mode === 'host' && gameStatus.value === 'ready') {
+    const seed = multiplayer.generateSeed()
+    seededRandom = new SeededRandom(seed)
     multiplayer.send({
       type: 'obstacle_layout',
       obstacles: [],
@@ -281,7 +283,7 @@ function syncSettingsToGuest() {
       enableObstacles: enableObstacles.value,
       gameMode: gameMode.value,
       gridSize: GRID_SIZE.value,
-      seed: multiplayer.generateSeed(),
+      seed,
     })
   }
 }
@@ -1215,7 +1217,11 @@ function mpHostGameLoop(timestamp) {
   lastTime = timestamp
   accumulator += delta
   while (accumulator >= gameInterval.value) {
-    mpUpdate()
+    try { mpUpdate() } catch (e) {
+      console.error('mpUpdate error:', e)
+      endMpRound(playerIndex.value)
+      return
+    }
     if (gameStatus.value !== "playing") return
     accumulator -= gameInterval.value
   }
@@ -1403,6 +1409,8 @@ function setupMultiplayer() {
       draw()
     } else if (data.type === 'request_state') {
       if (data.guestName) opponentName.value = data.guestName
+      const seed = multiplayer.generateSeed()
+      seededRandom = new SeededRandom(seed)
       multiplayer.send({
         type: 'obstacle_layout',
         obstacles: [],
@@ -1413,7 +1421,7 @@ function setupMultiplayer() {
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
         hostName: playerName.value,
-        seed: multiplayer.generateSeed(),
+        seed,
       })
     } else if (data.type === 'game_state') {
       if (props.mode === 'guest' && gameStatus.value === 'playing') {
@@ -1491,6 +1499,8 @@ function setupMultiplayer() {
     gameStatus.value = 'waiting'
     draw()
     multiplayer.onConnection(() => {
+      const seed = multiplayer.generateSeed()
+      seededRandom = new SeededRandom(seed)
       multiplayer.send({
         type: 'obstacle_layout',
         obstacles: [],
@@ -1501,7 +1511,7 @@ function setupMultiplayer() {
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
         hostName: playerName.value,
-        seed: multiplayer.generateSeed(),
+        seed,
       })
       gameStatus.value = 'ready'
       draw()
