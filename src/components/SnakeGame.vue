@@ -65,6 +65,10 @@ let obstacles = []
 let obstaclesActive = false
 let prevSnake = []
 
+function sp(index) {
+  return snake[index]
+}
+
 let opponentSnake = []
 let opponentDirection = { x: 1, y: 0 }
 let opponentFoods = []
