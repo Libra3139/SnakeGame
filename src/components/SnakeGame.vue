@@ -1017,9 +1017,9 @@ function mpUpdate() {
     guestAlive = false
   }
 
-  if (!hostAlive && !guestAlive) { endMpRound(-1); return }
-  if (!hostAlive) { endMpRound(1 - playerIndex.value); return }
-  if (!guestAlive) { endMpRound(playerIndex.value); return }
+  if (!hostAlive && !guestAlive) { console.warn('death both',{hostHead,guestHead,dir:direction,odir:opponentDirection,snake:snake.map(s=>({...s})),opp:opponentSnake.map(s=>({...s})),obs:myObstacles,oobs:opponentObstacles}); endMpRound(-1); return }
+  if (!hostAlive) { console.warn('death host',{hostHead,dir:direction,snake:snake.map(s=>({...s})),obs:myObstacles}); endMpRound(1 - playerIndex.value); return }
+  if (!guestAlive) { console.warn('death guest',{guestHead,odir:opponentDirection,opp:opponentSnake.map(s=>({...s})),oobs:opponentObstacles}); endMpRound(playerIndex.value); return }
 
   snake.unshift(hostHead)
   opponentSnake.unshift(guestHead)
