@@ -277,6 +277,15 @@ let _chatRelayPeer = null
 let _chatRelayConns = new Set()
 let _chatRelayConn = null
 let _chatRelayCb = null
+let _remotePlayers = new Map()
+let _presenceRelayTimer = null
+
+function _cleanupRemotePlayers() {
+  const now = Date.now()
+  for (const [uuid, p] of _remotePlayers) {
+    if (now - p.timestamp > PRESENCE_TTL * 2) _remotePlayers.delete(uuid)
+  }
+}
 
 export function initChatRelay() {
   if (_chatRelayConn || _chatRelayPeer) return Promise.resolve()
@@ -293,6 +302,13 @@ function _tryConnectRelay() {
         _chatRelayConn.peerObj = p
         c.on('data', (data) => {
           if (data.type === 'chat' && _chatRelayCb) _chatRelayCb(data)
+          if (data.type === 'player_presence' && data.playerUUID !== _playerUUID) {
+            _remotePlayers.set(data.playerUUID, {
+              playerUUID: data.playerUUID,
+              playerName: data.playerName,
+              timestamp: Date.now()
+            })
+          }
         })
         c.on('close', () => { _chatRelayConn = null })
         resolve()
@@ -321,6 +337,20 @@ function _becomeChatRelay() {
           }
           if (_chatRelayCb) _chatRelayCb(data)
         }
+        if (data.type === 'player_presence') {
+          for (const conn of _chatRelayConns) {
+            if (conn !== c && conn.open) {
+              try { conn.send({ type: 'player_presence', playerUUID: data.playerUUID, playerName: data.playerName }) } catch {}
+            }
+          }
+          if (data.playerUUID !== _playerUUID) {
+            _remotePlayers.set(data.playerUUID, {
+              playerUUID: data.playerUUID,
+              playerName: data.playerName,
+              timestamp: Date.now()
+            })
+          }
+        }
       })
       c.on('close', () => _chatRelayConns.delete(c))
     })
@@ -329,6 +359,7 @@ function _becomeChatRelay() {
 }
 
 export function destroyChatRelay() {
+  stopPlayerPresenceRelay()
   if (_chatRelayConn) {
     _chatRelayConn.close()
     if (_chatRelayConn.peerObj) _chatRelayConn.peerObj.destroy()
@@ -339,6 +370,7 @@ export function destroyChatRelay() {
     _chatRelayPeer = null
   }
   _chatRelayConns.clear()
+  _remotePlayers.clear()
 }
 
 export function sendChatRelayMessage(sender, text) {
@@ -356,6 +388,41 @@ export function sendChatRelayMessage(sender, text) {
 
 export function onChatRelayMessage(cb) {
   _chatRelayCb = cb
+}
+
+export function startPlayerPresenceRelay() {
+  stopPlayerPresenceRelay()
+  const sendPresence = () => {
+    const data = { type: 'player_presence', playerUUID: _playerUUID, playerName: _playerName }
+    if (_chatRelayConn && _chatRelayConn.open) {
+      _chatRelayConn.send(data)
+    }
+    if (_chatRelayPeer) {
+      for (const conn of _chatRelayConns) {
+        if (conn.open) {
+          try { conn.send(data) } catch {}
+        }
+      }
+    }
+    _cleanupRemotePlayers()
+  }
+  sendPresence()
+  _presenceRelayTimer = setInterval(sendPresence, 5000)
+}
+
+export function stopPlayerPresenceRelay() {
+  if (_presenceRelayTimer) {
+    clearInterval(_presenceRelayTimer)
+    _presenceRelayTimer = null
+  }
+  _remotePlayers.clear()
+}
+
+export function autoHostLobby() {
+  if (_lobbyPeer) return Promise.resolve()
+  return startLobby().catch(() => {
+    // Lobby already exists elsewhere, that's fine
+  })
 }
 
 export function onRoomList(cb) {
@@ -508,6 +575,13 @@ export function fetchActivePlayers() {
   for (const [, p] of presences) {
     if (now - p.timestamp < PRESENCE_TTL) {
       valid.push({ ...p })
+    }
+  }
+  for (const [, p] of _remotePlayers) {
+    if (now - p.timestamp < PRESENCE_TTL) {
+      if (!valid.some(v => v.playerUUID === p.playerUUID)) {
+        valid.push({ ...p })
+      }
     }
   }
   return valid

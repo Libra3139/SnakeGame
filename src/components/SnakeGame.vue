@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from "vue"
 import * as multiplayer from '../game/multiplayer.js'
 import { getPlayerName, SeededRandom } from '../game/multiplayer.js'
+import ChatPanel from './ChatPanel.vue'
 
 const props = defineProps({
   mode: { type: String, default: 'single' },
@@ -19,6 +20,7 @@ const peerId = ref('')
 const playerName = ref('')
 const opponentName = ref('')
 const playerListCollapsed = ref(false)
+const chatPanelCollapsed = ref(true)
 const activePlayers = ref([])
 let _presenceTimer = null
 const myReady = ref(false)
@@ -1512,6 +1514,12 @@ function setupMultiplayer() {
 }
 
 onMounted(() => {
+  multiplayer.initChatRelay().then(() => {
+    multiplayer.onChatRelayMessage((data) => {
+      multiplayer.sendChatMessage(data.sender, data.text)
+    })
+    multiplayer.startPlayerPresenceRelay()
+  }).catch(() => {})
   if (isMultiplayer.value) {
     playerName.value = getPlayerName()
     loadQTable()
@@ -1582,7 +1590,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="game-layout">
+    <div class="game-layout" :class="{ 'multiplayer-layout': isMultiplayer }">
       <div v-if="!isMultiplayer" class="leaderboard-panel">
         <h3>Leaderboard</h3>
         <div class="lb-tabs">
@@ -1706,22 +1714,18 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="isMultiplayer" class="controls">
-          <button @click="$emit('back')" class="btn btn-danger">Disconnect</button>
-        </div>
-        <div v-else class="controls">
+        <div v-if="!isMultiplayer" class="controls">
           <button @click="startGame" class="btn btn-primary">
             {{ gameStatus === 'gameover' || gameStatus === 'win' ? 'Play Again' : 'Start Game' }}
           </button>
         </div>
 
-        <div class="instructions">
-          <p v-if="isMultiplayer">Use <kbd>Arrow Keys</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move your snake</p>
-          <p v-else>Use <kbd>Arrow Keys</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move</p>
+        <div v-if="!isMultiplayer" class="instructions">
+          <p>Use <kbd>Arrow Keys</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move</p>
         </div>
       </div>
 
-      <div v-if="!isMultiplayer || (props.mode === 'host' && gameStatus === 'waiting') || gameStatus === 'ready'" class="settings-panel">
+      <div v-if="!isMultiplayer" class="settings-panel">
         <h3>Settings</h3>
         <div class="setting-group">
           <label>Board Size</label>
@@ -1729,7 +1733,6 @@ onUnmounted(() => {
             <button
               v-for="opt in boardSizeOptions"
               :key="opt.value"
-              :disabled="props.mode === 'guest'"
               @click="boardSize = opt.value"
               :class="['btn', 'btn-small', { active: boardSize === opt.value }]"
             >
@@ -1743,7 +1746,6 @@ onUnmounted(() => {
             <button
               v-for="opt in gameModeOptions"
               :key="opt.value"
-              :disabled="props.mode === 'guest'"
               @click="gameMode = opt.value"
               v-show="opt.value !== 'auto'"
               :class="['btn', 'btn-small', { active: gameMode === opt.value }]"
@@ -1758,7 +1760,6 @@ onUnmounted(() => {
             <button
               v-for="opt in difficultyOptions"
               :key="opt.value"
-              :disabled="props.mode === 'guest'"
               @click="difficulty = opt.value"
               :class="['btn', 'btn-small', { active: difficulty === opt.value }]"
             >
@@ -1768,43 +1769,104 @@ onUnmounted(() => {
         </div>
         <div class="setting-group">
           <label class="checkbox-label">
-            <input type="checkbox" v-model="enableObstacles" :disabled="props.mode === 'guest'" />
+            <input type="checkbox" v-model="enableObstacles" />
             Enable Obstacles
           </label>
         </div>
         <p class="current-mode">{{ gameMode === "greedy" ? "Greedy" : currentSpeedLabel }}{{ enableObstacles ? " + Obstacles" : "" }}</p>
       </div>
 
-      <div v-if="isMultiplayer" class="right-sidebar">
-        <div class="player-list-panel" :class="{ collapsed: playerListCollapsed }">
-          <button class="pl-toggle" @click="playerListCollapsed = !playerListCollapsed">
-            {{ playerListCollapsed ? '◀' : '▶' }}
-          </button>
-          <div v-show="!playerListCollapsed" class="pl-content">
-            <h3>Players</h3>
-            <div class="pl-item pl-you">
-              <span class="pl-dot"></span>
-              <span class="pl-name">{{ playerName || ('P' + (playerIndex + 1)) }}</span>
-              <span class="pl-tag">You</span>
-            </div>
-            <template v-for="p in activePlayers" :key="p.playerUUID">
-              <div v-if="p.playerName !== playerName && p.playerName !== opponentName" class="pl-item pl-other">
-                <span class="pl-dot"></span>
-                <span class="pl-name">{{ p.playerName }}</span>
+      <template v-if="isMultiplayer">
+        <div class="bottom-bar">
+          <div v-if="(props.mode === 'host' && gameStatus === 'waiting') || gameStatus === 'ready'" class="bottom-settings">
+            <h3>Settings</h3>
+            <div class="setting-group">
+              <label>Board Size</label>
+              <div class="difficulty-buttons">
+                <button
+                  v-for="opt in boardSizeOptions"
+                  :key="opt.value"
+                  :disabled="props.mode === 'guest'"
+                  @click="boardSize = opt.value"
+                  :class="['btn', 'btn-small', { active: boardSize === opt.value }]"
+                >
+                  {{ opt.label }}
+                </button>
               </div>
-            </template>
-            <div v-if="opponentName" class="pl-item pl-opponent">
-              <span class="pl-dot"></span>
-              <span class="pl-name">{{ opponentName }}</span>
-              <span class="pl-tag">Opp</span>
             </div>
-            <div v-if="activePlayers.length <= 1 && !opponentName" class="pl-item pl-empty">
-              <span class="pl-name">No other players</span>
+            <div class="setting-group">
+              <label>Game Mode</label>
+              <div class="difficulty-buttons">
+                <button
+                  v-for="opt in gameModeOptions"
+                  :key="opt.value"
+                  :disabled="props.mode === 'guest'"
+                  @click="gameMode = opt.value"
+                  v-show="opt.value !== 'auto'"
+                  :class="['btn', 'btn-small', { active: gameMode === opt.value }]"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+            <div class="setting-group">
+              <label>Difficulty</label>
+              <div class="difficulty-buttons">
+                <button
+                  v-for="opt in difficultyOptions"
+                  :key="opt.value"
+                  :disabled="props.mode === 'guest'"
+                  @click="difficulty = opt.value"
+                  :class="['btn', 'btn-small', { active: difficulty === opt.value }]"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+            <div class="setting-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="enableObstacles" :disabled="props.mode === 'guest'" />
+                Enable Obstacles
+              </label>
+            </div>
+            <p class="current-mode">{{ gameMode === "greedy" ? "Greedy" : currentSpeedLabel }}{{ enableObstacles ? " + Obstacles" : "" }}</p>
+          </div>
+          <div class="bottom-player-list">
+            <h3>Players</h3>
+            <div class="mp-player-items">
+              <div class="pl-item pl-you">
+                <span class="pl-dot"></span>
+                <span class="pl-name">{{ playerName || ('P' + (playerIndex + 1)) }}</span>
+                <span class="pl-tag">You</span>
+              </div>
+              <template v-for="p in activePlayers" :key="p.playerUUID">
+                <div v-if="p.playerName !== playerName && p.playerName !== opponentName" class="pl-item pl-other">
+                  <span class="pl-dot"></span>
+                  <span class="pl-name">{{ p.playerName }}</span>
+                </div>
+              </template>
+              <div v-if="opponentName" class="pl-item pl-opponent">
+                <span class="pl-dot"></span>
+                <span class="pl-name">{{ opponentName }}</span>
+                <span class="pl-tag">Opp</span>
+              </div>
+              <div v-if="activePlayers.length <= 1 && !opponentName" class="pl-item pl-empty">
+                <span class="pl-name">No other players</span>
+              </div>
             </div>
           </div>
+          <div class="bottom-controls">
+            <button @click="$emit('back')" class="btn btn-danger">Disconnect</button>
+            <p>Use <kbd>Arrow Keys</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move your snake</p>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
+
+    <ChatPanel
+      :collapsed="chatPanelCollapsed"
+      @toggle="chatPanelCollapsed = !chatPanelCollapsed"
+    />
   </div>
 </template>
 
@@ -2600,6 +2662,74 @@ kbd {
   position: sticky;
   top: 10px;
 }
+
+.bottom-bar {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  width: 100%;
+  max-width: min(1060px, 95vw);
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.bottom-settings {
+  width: clamp(260px, 28vw, 320px);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: clamp(10px, 2vw, 16px);
+  backdrop-filter: blur(10px);
+  flex-shrink: 0;
+}
+
+.bottom-settings h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: #4ecdc4;
+}
+
+.bottom-player-list {
+  width: clamp(200px, 22vw, 260px);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: clamp(10px, 2vw, 16px);
+  backdrop-filter: blur(10px);
+  flex-shrink: 0;
+}
+
+.bottom-player-list h3 {
+  margin: 0 0 10px 0;
+  font-size: 1rem;
+  color: #4ecdc4;
+}
+
+.mp-player-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bottom-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+}
+
+.bottom-controls p {
+  color: #a0a0a0;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.game-layout.multiplayer-layout {
+  flex-direction: column;
+  align-items: center;
+}
+
+
 .player-list-panel.collapsed {
   width: 40px;
   padding: 16px 8px;
@@ -2690,19 +2820,22 @@ kbd {
 }
 
 @media (max-width: 1200px) {
-  .game-layout {
+  .game-layout:not(.multiplayer-layout) {
     flex-direction: column;
     align-items: center;
   }
-  .settings-panel,
-  .leaderboard-panel {
+  .game-layout:not(.multiplayer-layout) .settings-panel,
+  .game-layout:not(.multiplayer-layout) .leaderboard-panel {
     width: min(500px, 92vw);
     align-self: center;
   }
-  .right-sidebar {
-    flex-direction: row;
+  .bottom-bar {
+    flex-direction: column;
+    align-items: center;
+  }
+  .bottom-settings,
+  .bottom-player-list {
     width: min(500px, 92vw);
-    position: static;
   }
 }
 
@@ -2724,9 +2857,13 @@ kbd {
     gap: 8px;
     padding: 0 8px;
   }
-  .right-sidebar {
+  .bottom-bar {
     flex-direction: column;
     width: min(320px, 92vw);
+  }
+  .bottom-settings,
+  .bottom-player-list {
+    width: 100%;
   }
 }
 </style>

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import * as multiplayer from '../game/multiplayer.js'
+import ChatPanel from './ChatPanel.vue'
 
 const emit = defineEmits(['startSingle', 'startMultiplayerHost', 'startMultiplayerGuest', 'back'])
 
@@ -15,11 +16,7 @@ const roomList = ref([])
 const activePlayers = ref([])
 const fetchingRooms = ref(false)
 const playerListCollapsed = ref(false)
-const chatMessages = ref([])
-const chatInput = ref('')
 const chatPanelCollapsed = ref(true)
-const chatBoxRef = ref(null)
-let _chatTimer = null
 const lobbyStarted = ref(false)
 const lobbyOnline = ref(false)
 
@@ -31,6 +28,7 @@ watch(showMultiplayer, (val) => {
   clearInterval(_roomListTimer)
   clearInterval(_roomPingTimer)
   if (val) {
+    multiplayer.autoHostLobby()
     refreshRoomList()
     _roomListTimer = setInterval(refreshRoomList, 5000)
     _roomPingTimer = setInterval(() => {
@@ -43,35 +41,23 @@ onMounted(() => {
   const identity = multiplayer.generateIdentity()
   playerName.value = identity.name
   multiplayer.registerPlayerPresence()
+  multiplayer.initChatRelay().then(() => {
+    multiplayer.onChatRelayMessage((data) => {
+      multiplayer.sendChatMessage(data.sender, data.text)
+    })
+    multiplayer.startPlayerPresenceRelay()
+  }).catch(() => {})
   refreshActivePlayers()
   _presenceTimer = setInterval(() => {
     multiplayer.updatePlayerPresencePing()
     refreshActivePlayers()
   }, 5000)
-  chatMessages.value = multiplayer.getChatMessages()
-  _chatTimer = setInterval(() => {
-    const msgs = multiplayer.getChatMessages()
-    if (msgs.length !== chatMessages.value.length) {
-      chatMessages.value = msgs
-      nextTick(() => {
-        const el = chatBoxRef.value
-        if (el) el.scrollTop = el.scrollHeight
-      })
-    }
-  }, 500)
-  multiplayer.initChatRelay().then(() => {
-    multiplayer.onChatRelayMessage((data) => {
-      multiplayer.sendChatMessage(data.sender, data.text)
-    })
-  }).catch(() => {})
 })
 
 onUnmounted(() => {
   clearInterval(_roomListTimer)
   clearInterval(_roomPingTimer)
   clearInterval(_presenceTimer)
-  clearInterval(_chatTimer)
-  multiplayer.destroyChatRelay()
 })
 
 async function refreshRoomList() {
@@ -155,19 +141,6 @@ function stopLobby() {
   connecting.value = false
   error.value = ''
   myPeerId.value = ''
-}
-
-function sendChat() {
-  const text = chatInput.value.trim()
-  if (!text) return
-  multiplayer.sendChatMessage(playerName.value, text)
-  multiplayer.sendChatRelayMessage(playerName.value, text)
-  chatInput.value = ''
-  chatMessages.value = multiplayer.getChatMessages()
-  nextTick(() => {
-    const el = chatBoxRef.value
-    if (el) el.scrollTop = el.scrollHeight
-  })
 }
 </script>
 
@@ -269,30 +242,10 @@ function sendChat() {
       <div v-if="error" class="mp-error">{{ error }}</div>
     </div>
 
-    <div class="mm-chat-panel" :class="{ collapsed: chatPanelCollapsed }">
-      <button class="mm-pl-toggle" @click="chatPanelCollapsed = !chatPanelCollapsed">
-        {{ chatPanelCollapsed ? '◀' : '▶' }}
-      </button>
-      <div v-show="!chatPanelCollapsed" class="mm-pl-content">
-        <h3>Chat</h3>
-        <div class="chat-messages" ref="chatBoxRef">
-          <div v-for="(msg, i) in chatMessages" :key="msg.id || i" class="chat-msg">
-            <span class="chat-sender">{{ msg.sender }}</span>
-            <span class="chat-text">{{ msg.text }}</span>
-          </div>
-          <div v-if="chatMessages.length === 0" class="chat-empty">No messages yet</div>
-        </div>
-        <div class="chat-input-row">
-          <input
-            v-model="chatInput"
-            class="chat-input"
-            placeholder="Type a message..."
-            @keyup.enter="sendChat"
-          />
-          <button @click="sendChat" class="chat-send-btn">Send</button>
-        </div>
-      </div>
-    </div>
+    <ChatPanel
+      :collapsed="chatPanelCollapsed"
+      @toggle="chatPanelCollapsed = !chatPanelCollapsed"
+    />
 
     <div class="mm-player-list-panel" :class="{ collapsed: playerListCollapsed }">
       <button class="mm-pl-toggle" @click="playerListCollapsed = !playerListCollapsed">
@@ -869,13 +822,6 @@ function sendChat() {
   .mm-player-list-panel.collapsed {
     width: 36px;
     padding: 12px 4px;
-  }
-  .mm-chat-panel {
-    width: clamp(200px, 50vw, 280px);
-    max-height: 300px;
-  }
-  .chat-messages {
-    max-height: 180px;
   }
 }
 </style>
