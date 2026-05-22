@@ -1,7 +1,7 @@
 ﻿<script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from "vue"
 import * as multiplayer from '../game/multiplayer.js'
-import { getPlayerName, getPlayerUUID } from '../game/multiplayer.js'
+import { getPlayerName, SeededRandom } from '../game/multiplayer.js'
 
 const props = defineProps({
   mode: { type: String, default: 'single' },
@@ -80,6 +80,9 @@ let guestInputQueue = []
 let obstacles = []
 let myObstacles = []
 let opponentObstacles = []
+let pendingRocks = [] // { x, y, startTime }
+const ROCK_FADE_DURATION = 3000
+let seededRandom = null
 let obstaclesActive = false
 let prevSnake = []
 
@@ -274,6 +277,7 @@ function syncSettingsToGuest() {
       enableObstacles: enableObstacles.value,
       gameMode: gameMode.value,
       gridSize: GRID_SIZE.value,
+      seed: multiplayer.generateSeed(),
     })
   }
 }
@@ -369,10 +373,11 @@ function placeFood(count) {
     if (foods.length >= MAX_FOODS) break
     let newFood
     let attempts = 0
+    const rand = seededRandom || Math
     do {
       newFood = {
-        x: Math.floor(Math.random() * GRID_SIZE.value) + 0.5,
-        y: Math.floor(Math.random() * GRID_SIZE.value) + 0.5
+        x: Math.floor(rand.next ? rand.next() * GRID_SIZE.value : Math.random() * GRID_SIZE.value) + 0.5,
+        y: Math.floor(rand.next ? rand.next() * GRID_SIZE.value : Math.random() * GRID_SIZE.value) + 0.5
       }
       attempts++
     } while (attempts < 100 && (
@@ -419,6 +424,7 @@ function initGame() {
     obstacles = []
     myObstacles = []
     opponentObstacles = []
+    pendingRocks = []
     placeFood()
     return
   }
@@ -436,7 +442,7 @@ function initGame() {
   placeFood()
 }
 
-function drawBoard(ctx, boardX, snakeArr, dirObj, foodArr, obsArr, lbl, colorScheme, offsetSnake) {
+function drawBoard(ctx, boardX, snakeArr, dirObj, foodArr, obsArr, pendingArr, lbl, colorScheme, offsetSnake) {
   const gs = GRID_SIZE.value
   const cs = CELL_SIZE.value
 
@@ -454,6 +460,19 @@ function drawBoard(ctx, boardX, snakeArr, dirObj, foodArr, obsArr, lbl, colorSch
     ctx.moveTo(boardX, i * cs)
     ctx.lineTo(boardX + CANVAS_SIZE, i * cs)
     ctx.stroke()
+  }
+
+  const now = Date.now()
+  if (pendingArr) {
+    for (const pr of pendingArr) {
+      const elapsed = now - pr.startTime
+      const alpha = Math.min(1, Math.max(0.1, elapsed / ROCK_FADE_DURATION))
+      ctx.fillStyle = `rgba(139, 69, 19, ${alpha})`
+      ctx.shadowColor = `rgba(139, 69, 19, ${alpha * 0.5})`
+      ctx.shadowBlur = 5 * alpha
+      ctx.fillRect(boardX + pr.x * cs + 1, pr.y * cs + 1, cs - 2, cs - 2)
+      ctx.shadowBlur = 0
+    }
   }
 
   obsArr.forEach(obs => {
@@ -551,9 +570,11 @@ function draw(alpha) {
   const cellSize = CELL_SIZE.value
 
   if (isMultiplayer.value) {
-    drawBoard(ctx, 0, snake, direction, foods, myObstacles, `You (P${playerIndex.value + 1})`,
+    const myPending = pendingRocks.filter(pr => pr.target === 0)
+    const oppPending = pendingRocks.filter(pr => pr.target === 1)
+    drawBoard(ctx, 0, snake, direction, foods, myObstacles, myPending, `You (P${playerIndex.value + 1})`,
       { start: { r: 78, g: 205, b: 196 }, end: { r: 26, g: 107, b: 101 } })
-    drawBoard(ctx, CANVAS_SIZE + 30, opponentSnake, opponentDirection, foods, opponentObstacles, 'Opponent',
+    drawBoard(ctx, CANVAS_SIZE + 30, opponentSnake, opponentDirection, foods, opponentObstacles, oppPending, 'Opponent',
       { start: { r: 255, g: 107, b: 179 }, end: { r: 180, g: 40, b: 110 } })
 
     const mw = CANVAS_SIZE * 2 + 10
@@ -928,7 +949,7 @@ function update() {
   }
 }
 
-function addRockForOpponent(oppSnake, oppDir, oppFoods, rockArray, gs) {
+function addRockForOpponent(oppSnake, oppDir, oppFoods, gs, target) {
   const forbidden = new Set()
   for (const s of oppSnake) forbidden.add(`${s.x},${s.y}`)
   for (const f of oppFoods) forbidden.add(`${Math.floor(f.x)},${Math.floor(f.y)}`)
@@ -940,14 +961,16 @@ function addRockForOpponent(oppSnake, oppDir, oppFoods, rockArray, gs) {
       forbidden.add(`${frontX},${frontY}`)
     }
   }
-  for (const r of rockArray) forbidden.add(`${r.x},${r.y}`)
+  for (const pr of pendingRocks) forbidden.add(`${pr.x},${pr.y}`)
   let pos
   let attempts = 0
   do {
     pos = { x: Math.floor(Math.random() * gs), y: Math.floor(Math.random() * gs) }
     attempts++
   } while (attempts < 200 && forbidden.has(`${pos.x},${pos.y}`))
-  if (attempts < 200) rockArray.push(pos)
+  if (attempts < 200) {
+    pendingRocks.push({ x: pos.x, y: pos.y, startTime: Date.now(), target })
+  }
 }
 
 function mpUpdate() {
@@ -1031,7 +1054,7 @@ function mpUpdate() {
   }
 
   if (hostAte) {
-    addRockForOpponent(opponentSnake, opponentDirection, foods, opponentObstacles, gs)
+    addRockForOpponent(opponentSnake, opponentDirection, foods, gs, 1)
     if (gameMode.value === "greedy") placeFood(4)
     else placeFood()
   } else {
@@ -1039,11 +1062,21 @@ function mpUpdate() {
   }
 
   if (guestAte) {
-    addRockForOpponent(snake, direction, foods, myObstacles, gs)
+    addRockForOpponent(snake, direction, foods, gs, 0)
     if (gameMode.value === "greedy") placeFood(4)
     else placeFood()
   } else {
     opponentSnake.pop()
+  }
+
+  const now = Date.now()
+  for (let i = pendingRocks.length - 1; i >= 0; i--) {
+    if (now - pendingRocks[i].startTime >= ROCK_FADE_DURATION) {
+      const pr = pendingRocks[i]
+      if (pr.target === 0) myObstacles.push({ x: pr.x, y: pr.y })
+      else opponentObstacles.push({ x: pr.x, y: pr.y })
+      pendingRocks.splice(i, 1)
+    }
   }
 
   multiplayer.send({
@@ -1057,6 +1090,7 @@ function mpUpdate() {
     guestScore: opponentScore,
     myObstacles: myObstacles.map(o => ({...o})),
     opponentObstacles: opponentObstacles.map(o => ({...o})),
+    pendingRocks: pendingRocks.map(pr => ({ x: pr.x, y: pr.y, startTime: pr.startTime, target: pr.target })),
   })
 }
 
@@ -1122,6 +1156,7 @@ function resetMpRound() {
   travelingFood = null
   myObstacles = []
   opponentObstacles = []
+  pendingRocks = []
   placeFood()
   draw()
 }
@@ -1340,6 +1375,9 @@ function setupMultiplayer() {
       if (data.foods) {
         foods = data.foods.map(f => ({...f}))
       }
+      if (data.seed !== undefined) {
+        seededRandom = new SeededRandom(data.seed)
+      }
       if (props.mode === 'guest') {
         if (data.hostName) opponentName.value = data.hostName
         if (gameStatus.value === 'waiting' || gameStatus.value === 'ready' || gameStatus.value === 'idle') {
@@ -1365,6 +1403,7 @@ function setupMultiplayer() {
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
         hostName: playerName.value,
+        seed: multiplayer.generateSeed(),
       })
     } else if (data.type === 'game_state') {
       if (props.mode === 'guest' && gameStatus.value === 'playing') {
@@ -1375,6 +1414,12 @@ function setupMultiplayer() {
         foods = data.foods.map(f => ({...f}))
         myObstacles = data.opponentObstacles.map(o => ({...o}))
         opponentObstacles = data.myObstacles.map(o => ({...o}))
+        if (data.pendingRocks) {
+          pendingRocks = data.pendingRocks.map(pr => ({
+            x: pr.x, y: pr.y, startTime: pr.startTime,
+            target: pr.target === 0 ? 1 : 0
+          }))
+        }
         score.value = data.guestScore
         opponentScore = data.hostScore
         draw()
@@ -1446,6 +1491,7 @@ function setupMultiplayer() {
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
         hostName: playerName.value,
+        seed: multiplayer.generateSeed(),
       })
       gameStatus.value = 'ready'
       draw()

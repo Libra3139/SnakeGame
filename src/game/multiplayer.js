@@ -1,14 +1,32 @@
-import Peer from 'peerjs'
+import Pusher from 'pusher-js'
 
-let peer = null
-let conn = null
+let pusher = null
+let roomChannel = null
 let _isHost = false
-let _myPeerId = null
+let _myRoomId = null
 let _onDataCb = null
 let _onDisconnectCb = null
 let _onConnCb = null
 let _pendingData = []
 let _pendingConn = false
+
+const PUSHER_KEY = import.meta.env.VITE_PUSHER_KEY || ''
+const PUSHER_CLUSTER = import.meta.env.VITE_PUSHER_CLUSTER || 'us2'
+
+// 確定性亂數產生器（LCG），用於食物種子同步確保雙方地圖公平
+export class SeededRandom {
+  constructor(seed) {
+    this.state = seed | 0
+    this.seed = seed
+  }
+  next() {
+    this.state = (this.state * 1664525 + 1013904223) | 0
+    return (this.state >>> 0) / 4294967296
+  }
+  getSeed() {
+    return this.seed
+  }
+}
 
 let _playerUUID = ''
 let _playerName = ''
@@ -30,9 +48,6 @@ export function getPlayerUUID() { return _playerUUID }
 const LOCAL_ROOMS_KEY = 'snake-local-rooms'
 const ROOM_TTL = 30000
 
-const PLAYER_PRESENCE_KEY = 'snake-player-presence'
-const PRESENCE_TTL = 5000
-
 function getLocalRoomsRaw() {
   try {
     const data = localStorage.getItem(LOCAL_ROOMS_KEY)
@@ -44,10 +59,10 @@ function saveLocalRooms(map) {
   localStorage.setItem(LOCAL_ROOMS_KEY, JSON.stringify(Array.from(map.entries())))
 }
 
-export function registerLocalRoom(hostPeerId) {
+export function registerLocalRoom(hostRoomId) {
   const rooms = getLocalRoomsRaw()
-  rooms.set(hostPeerId, {
-    peerId: hostPeerId,
+  rooms.set(hostRoomId, {
+    peerId: hostRoomId,
     playerName: _playerName,
     playerUUID: _playerUUID,
     timestamp: Date.now()
@@ -55,15 +70,15 @@ export function registerLocalRoom(hostPeerId) {
   saveLocalRooms(rooms)
 }
 
-export function unregisterLocalRoom(peerId) {
+export function unregisterLocalRoom(roomId) {
   const rooms = getLocalRoomsRaw()
-  rooms.delete(peerId)
+  rooms.delete(roomId)
   saveLocalRooms(rooms)
 }
 
-export function updateLocalRoomPing(peerId) {
+export function updateLocalRoomPing(roomId) {
   const rooms = getLocalRoomsRaw()
-  const room = rooms.get(peerId)
+  const room = rooms.get(roomId)
   if (room) {
     room.timestamp = Date.now()
     saveLocalRooms(rooms)
@@ -81,6 +96,18 @@ export function fetchLocalRooms() {
   }
   return valid
 }
+
+export function fetchRooms() {
+  return Promise.resolve(fetchLocalRooms())
+}
+
+export function onRoomList() {}
+
+export function startLobby() { return Promise.resolve() }
+export function stopLobby() {}
+
+const PLAYER_PRESENCE_KEY = 'snake-player-presence'
+const PRESENCE_TTL = 5000
 
 function getPlayerPresenceRaw() {
   try {
@@ -130,77 +157,100 @@ export function fetchActivePlayers() {
   return valid
 }
 
-export function fetchRooms() {
-  return Promise.resolve(fetchLocalRooms())
+function getPusher() {
+  if (!pusher) {
+    pusher = new Pusher(PUSHER_KEY, {
+      cluster: PUSHER_CLUSTER,
+      authorizer: (channel) => ({
+        authorize: (socketId, callback) => {
+          fetch('/api/pusher/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              socket_id: socketId,
+              channel_name: channel.name,
+              user_id: _playerUUID,
+              user_info: { name: _playerName }
+            })
+          })
+          .then(r => r.json())
+          .then(data => callback(false, data))
+          .catch(err => callback(true, err))
+        }
+      })
+    })
+  }
+  return pusher
 }
 
-export function onRoomList() {}
-
-export function startLobby() {
-  return Promise.resolve()
+function generateRoomId() {
+  return Math.random().toString(36).substring(2, 10)
 }
-
-export function stopLobby() {}
-
-export function registerWithLobby() {
-  return Promise.resolve()
-}
-
-export function unregisterFromLobby() {}
 
 export function createRoom() {
   return new Promise((resolve, reject) => {
-    peer = new Peer()
-    peer.on('open', (id) => {
-      _isHost = true
-      _myPeerId = id
-      registerLocalRoom(id)
-      resolve(id)
-      peer.on('connection', (connection) => {
-        conn = connection
-        conn.on('data', (data) => {
-          if (_onDataCb) _onDataCb(data)
-          else _pendingData.push(data)
-        })
-        conn.on('close', () => {
-          if (_onDisconnectCb) _onDisconnectCb()
-        })
+    const roomId = generateRoomId()
+    _isHost = true
+    _myRoomId = roomId
+    registerLocalRoom(roomId)
+
+    try {
+      const p = getPusher()
+      roomChannel = p.subscribe(`presence-room-${roomId}`)
+      roomChannel.bind('pusher:subscription_succeeded', () => {
+        resolve(roomId)
+      })
+      roomChannel.bind('client-player_input', (data) => {
+        if (_onDataCb) _onDataCb(data)
+        else _pendingData.push(data)
+      })
+      roomChannel.bind('pusher:member_added', () => {
         if (_onConnCb) _onConnCb()
         else _pendingConn = true
       })
-    })
-    peer.on('error', (err) => reject(err))
+      roomChannel.bind('pusher:member_removed', () => {
+        if (_onDisconnectCb) _onDisconnectCb()
+      })
+      roomChannel.bind('pusher:subscription_error', () => {
+        reject(new Error('Failed to subscribe to room channel'))
+      })
+    } catch (e) {
+      reject(e)
+    }
   })
 }
 
-export function joinRoom(hostId) {
+export function joinRoom(roomId) {
   return new Promise((resolve, reject) => {
-    peer = new Peer()
-    peer.on('open', () => {
-      conn = peer.connect(hostId, { reliable: true })
-      let resolved = false
-      conn.on('open', () => {
-        _isHost = false
-        _myPeerId = peer.id
-        conn.on('data', (data) => {
-          if (_onDataCb) _onDataCb(data)
-          else _pendingData.push(data)
-        })
-        conn.on('close', () => {
-          if (_onDisconnectCb) _onDisconnectCb()
-        })
-        if (!resolved) { resolved = true; resolve() }
+    _isHost = false
+    _myRoomId = roomId
+
+    try {
+      const p = getPusher()
+      roomChannel = p.subscribe(`presence-room-${roomId}`)
+      roomChannel.bind('pusher:subscription_succeeded', () => {
+        resolve()
       })
-      conn.on('error', (err) => { if (!resolved) { resolved = true; reject(err) } })
-      setTimeout(() => { if (!resolved) { resolved = true; reject(new Error('Connection timeout')) } }, 15000)
-    })
-    peer.on('error', (err) => reject(err))
+      roomChannel.bind('client-game_state', (data) => {
+        if (_onDataCb) _onDataCb(data)
+        else _pendingData.push(data)
+      })
+      roomChannel.bind('pusher:member_removed', () => {
+        if (_onDisconnectCb) _onDisconnectCb()
+      })
+      roomChannel.bind('pusher:subscription_error', () => {
+        reject(new Error('Failed to subscribe to room channel'))
+      })
+    } catch (e) {
+      reject(e)
+    }
   })
 }
 
 export function send(data) {
-  if (conn && conn.open) {
-    conn.send(data)
+  if (roomChannel && _myRoomId) {
+    const eventName = _isHost ? 'client-game_state' : 'client-player_input'
+    roomChannel.trigger(eventName, data)
   }
 }
 
@@ -225,11 +275,13 @@ export function onConnection(cb) {
 }
 
 export function disconnect() {
-  if (_myPeerId) unregisterLocalRoom(_myPeerId)
-  if (conn) { conn.close(); conn = null }
-  if (peer) { peer.destroy(); peer = null }
+  if (_myRoomId) unregisterLocalRoom(_myRoomId)
+  if (roomChannel && pusher) {
+    pusher.unsubscribe(roomChannel.name)
+    roomChannel = null
+  }
   _isHost = false
-  _myPeerId = null
+  _myRoomId = null
   _onDataCb = null
   _onDisconnectCb = null
   _onConnCb = null
@@ -242,5 +294,16 @@ export function isHost() {
 }
 
 export function myPeerId() {
-  return _myPeerId
+  return _myRoomId || ''
+}
+
+let _currentSeed = 0
+
+export function generateSeed() {
+  _currentSeed = (Math.random() * 2147483647) | 0
+  return _currentSeed
+}
+
+export function getCurrentSeed() {
+  return _currentSeed
 }
