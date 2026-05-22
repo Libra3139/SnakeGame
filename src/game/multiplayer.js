@@ -124,7 +124,6 @@ let _onRoomListCb = null
 let _lobbyCleanupTimer = null
 let _lobbyHeartbeat = null
 const _chatPeers = new Set()
-let _onLobbyChatCb = null
 
 export function startLobby() {
   return new Promise((resolve, reject) => {
@@ -273,44 +272,90 @@ export function fetchRooms() {
   })
 }
 
-let _chatLobbyPeer = null
-let _chatLobbyConn = null
+const CHAT_RELAY_ID = 'snake-chat-relay'
+let _chatRelayPeer = null
+let _chatRelayConns = new Set()
+let _chatRelayConn = null
+let _chatRelayCb = null
 
-export function connectToChatLobby() {
-  if (_chatLobbyConn) return Promise.resolve()
+export function initChatRelay() {
+  if (_chatRelayConn || _chatRelayPeer) return Promise.resolve()
+  return _tryConnectRelay().catch(() => _becomeChatRelay())
+}
+
+function _tryConnectRelay() {
   return new Promise((resolve, reject) => {
-    _chatLobbyPeer = new Peer()
-    _chatLobbyPeer.on('open', () => {
-      const c = _chatLobbyPeer.connect(LOBBY_ID, { reliable: true })
+    const p = new Peer()
+    p.on('open', () => {
+      const c = p.connect(CHAT_RELAY_ID, { reliable: true })
       c.on('open', () => {
-        _chatLobbyConn = c
+        _chatRelayConn = c
+        _chatRelayConn.peerObj = p
+        c.on('data', (data) => {
+          if (data.type === 'chat' && _chatRelayCb) _chatRelayCb(data)
+        })
+        c.on('close', () => { _chatRelayConn = null })
         resolve()
       })
-      c.on('error', () => { reject(new Error('Chat lobby unavailable')) })
-      c.on('data', (data) => {
-        if (data.type === 'chat' && _onLobbyChatCb) {
-          _onLobbyChatCb(data)
-        }
-      })
-      setTimeout(() => { if (!_chatLobbyConn) { reject(new Error('Chat lobby timeout')) } }, 5000)
+      c.on('error', () => { p.destroy(); reject() })
+      setTimeout(() => { if (!_chatRelayConn) { p.destroy(); reject() } }, 5000)
     })
-    _chatLobbyPeer.on('error', () => reject(new Error('Failed to connect')))
+    p.on('error', () => reject())
   })
 }
 
-export function disconnectFromChatLobby() {
-  if (_chatLobbyConn) { _chatLobbyConn.close(); _chatLobbyConn = null }
-  if (_chatLobbyPeer) { _chatLobbyPeer.destroy(); _chatLobbyPeer = null }
+function _becomeChatRelay() {
+  return new Promise((resolve, reject) => {
+    _chatRelayPeer = new Peer(CHAT_RELAY_ID)
+    _chatRelayPeer.on('open', () => {
+      resolve()
+    })
+    _chatRelayPeer.on('connection', (c) => {
+      _chatRelayConns.add(c)
+      c.on('data', (data) => {
+        if (data.type === 'chat') {
+          for (const conn of _chatRelayConns) {
+            if (conn !== c && conn.open) {
+              try { conn.send({ type: 'chat', sender: data.sender, text: data.text }) } catch {}
+            }
+          }
+          if (_chatRelayCb) _chatRelayCb(data)
+        }
+      })
+      c.on('close', () => _chatRelayConns.delete(c))
+    })
+    _chatRelayPeer.on('error', () => reject())
+  })
 }
 
-export function sendLobbyChat(sender, text) {
-  if (_chatLobbyConn && _chatLobbyConn.open) {
-    _chatLobbyConn.send({ type: 'chat', sender, text })
+export function destroyChatRelay() {
+  if (_chatRelayConn) {
+    _chatRelayConn.close()
+    if (_chatRelayConn.peerObj) _chatRelayConn.peerObj.destroy()
+    _chatRelayConn = null
+  }
+  if (_chatRelayPeer) {
+    _chatRelayPeer.destroy()
+    _chatRelayPeer = null
+  }
+  _chatRelayConns.clear()
+}
+
+export function sendChatRelayMessage(sender, text) {
+  if (_chatRelayConn && _chatRelayConn.open) {
+    _chatRelayConn.send({ type: 'chat', sender, text })
+  }
+  if (_chatRelayPeer) {
+    for (const conn of _chatRelayConns) {
+      if (conn.open) {
+        try { conn.send({ type: 'chat', sender, text }) } catch {}
+      }
+    }
   }
 }
 
-export function onLobbyChat(cb) {
-  _onLobbyChatCb = cb
+export function onChatRelayMessage(cb) {
+  _chatRelayCb = cb
 }
 
 export function onRoomList(cb) {

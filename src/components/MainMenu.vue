@@ -59,8 +59,8 @@ onMounted(() => {
       })
     }
   }, 500)
-  multiplayer.connectToChatLobby().then(() => {
-    multiplayer.onLobbyChat((data) => {
+  multiplayer.initChatRelay().then(() => {
+    multiplayer.onChatRelayMessage((data) => {
       multiplayer.sendChatMessage(data.sender, data.text)
     })
   }).catch(() => {})
@@ -71,7 +71,7 @@ onUnmounted(() => {
   clearInterval(_roomPingTimer)
   clearInterval(_presenceTimer)
   clearInterval(_chatTimer)
-  multiplayer.disconnectFromChatLobby()
+  multiplayer.destroyChatRelay()
 })
 
 async function refreshRoomList() {
@@ -161,7 +161,7 @@ function sendChat() {
   const text = chatInput.value.trim()
   if (!text) return
   multiplayer.sendChatMessage(playerName.value, text)
-  multiplayer.sendLobbyChat(playerName.value, text)
+  multiplayer.sendChatRelayMessage(playerName.value, text)
   chatInput.value = ''
   chatMessages.value = multiplayer.getChatMessages()
   nextTick(() => {
