@@ -1747,7 +1747,6 @@ onUnmounted(() => {
             </div>
           </template>
         </div>
-        <button @click="leaderboard = []; saveLeaderboard()" class="btn btn-small btn-danger">Clear</button>
       </div>
 
       <div class="game-center">
