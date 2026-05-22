@@ -15,6 +15,10 @@ const canvas = ref(null)
 const score = ref(0)
 const gameStatus = ref("idle")
 const peerId = ref('')
+const myReady = ref(false)
+const opponentReady = ref(false)
+const countdownValue = ref(5)
+let countdownTimer = null
 
 
 const moveSpeed = ref(10)
@@ -1061,6 +1065,37 @@ function handleKeydown(e) {
   }
 }
 
+function pressReady() {
+  myReady.value = true
+  multiplayer.send({ type: 'ready' })
+  checkBothReady()
+}
+
+function startCountdown(count) {
+  gameStatus.value = 'countdown'
+  countdownValue.value = count
+  draw()
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = setInterval(() => {
+    countdownValue.value--
+    if (countdownValue.value <= 0) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+      myReady.value = false
+      opponentReady.value = false
+      startGame()
+    }
+    draw()
+  }, 1000)
+}
+
+function checkBothReady() {
+  if (props.mode === 'host' && myReady.value && opponentReady.value) {
+    multiplayer.send({ type: 'countdown_start', count: 5 })
+    startCountdown(5)
+  }
+}
+
 function setupMultiplayer() {
   initGame()
   draw()
@@ -1069,7 +1104,7 @@ function setupMultiplayer() {
     if (data.type === 'obstacle_layout') {
       obstacles = data.obstacles.map(o => ({...o}))
       if (props.mode === 'guest') {
-        startGame()
+        gameStatus.value = 'ready'
       }
       draw()
     } else if (data.type === 'player_state') {
@@ -1090,13 +1125,20 @@ function setupMultiplayer() {
         lastTime = 0
         draw()
       }
+    } else if (data.type === 'ready') {
+      opponentReady.value = true
+      checkBothReady()
+      draw()
+    } else if (data.type === 'countdown_start') {
+      startCountdown(data.count)
     }
   })
 
   multiplayer.onDisconnect(() => {
-    if (gameStatus.value === 'playing') {
+    if (gameStatus.value === 'playing' || gameStatus.value === 'ready' || gameStatus.value === 'countdown') {
       gameWinner = 1 - playerIndex.value
       gameStatus.value = 'gameover'
+      if (countdownTimer) clearInterval(countdownTimer)
       if (animFrameId) cancelAnimationFrame(animFrameId)
       animFrameId = null
       accumulator = 0
@@ -1114,7 +1156,8 @@ function setupMultiplayer() {
         obstacles: obstacles.map(o => ({...o})),
         gridSize: GRID_SIZE.value,
       })
-      startGame()
+      gameStatus.value = 'ready'
+      draw()
     })
   }
 }
@@ -1141,6 +1184,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown)
   if (animFrameId) cancelAnimationFrame(animFrameId)
+  if (countdownTimer) clearInterval(countdownTimer)
   if (isMultiplayer.value) {
     multiplayer.disconnect()
   }
@@ -1229,6 +1273,30 @@ onUnmounted(() => {
               <p class="waiting-id">{{ peerId }}</p>
               <p class="waiting-hint">Share this ID with your opponent</p>
               <button @click="$emit('back')" class="btn btn-danger waiting-cancel">Cancel</button>
+            </div>
+          </div>
+          <div v-if="gameStatus === 'ready'" class="overlay">
+            <div class="ready-content">
+              <p class="ready-title">Opponent Connected!</p>
+              <div class="ready-players">
+                <div class="ready-player" :class="{ 'ready-done': myReady }">
+                  <span class="ready-icon">{{ myReady ? '✓' : '⋯' }}</span>
+                  <span>You</span>
+                </div>
+                <span class="ready-vs">VS</span>
+                <div class="ready-player" :class="{ 'ready-done': opponentReady }">
+                  <span class="ready-icon">{{ opponentReady ? '✓' : '⋯' }}</span>
+                  <span>Opponent</span>
+                </div>
+              </div>
+              <button v-if="!myReady" @click="pressReady" class="btn btn-primary ready-btn">Ready</button>
+              <p v-else class="ready-waiting">Waiting for opponent...</p>
+            </div>
+          </div>
+          <div v-if="gameStatus === 'countdown'" class="overlay">
+            <div class="countdown-content">
+              <p class="countdown-number">{{ countdownValue }}</p>
+              <p class="countdown-label">Get Ready!</p>
             </div>
           </div>
         </div>
@@ -1780,6 +1848,104 @@ canvas {
 
 .waiting-cancel {
   margin-top: 12px;
+}
+
+.ready-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+}
+
+.ready-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #4ecdc4;
+}
+
+.ready-players {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.ready-player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.3s;
+}
+
+.ready-player.ready-done {
+  border-color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.1);
+  box-shadow: 0 0 20px rgba(78, 205, 196, 0.2);
+}
+
+.ready-icon {
+  font-size: 1.5rem;
+  color: #666;
+}
+
+.ready-done .ready-icon {
+  color: #4ecdc4;
+}
+
+.ready-vs {
+  color: #666;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.ready-btn {
+  padding: 14px 60px;
+  font-size: 1.2rem;
+  animation: readyPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes readyPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(78, 205, 196, 0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(78, 205, 196, 0); }
+}
+
+.ready-waiting {
+  color: #888;
+  font-size: 0.95rem;
+}
+
+.countdown-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.countdown-number {
+  font-size: 6rem;
+  font-weight: 900;
+  color: #ffd700;
+  text-shadow: 0 0 40px rgba(255, 215, 0, 0.4);
+  animation: countPop 0.5s ease-out;
+  margin: 0;
+}
+
+@keyframes countPop {
+  0% { transform: scale(1.5); opacity: 0.5; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.countdown-label {
+  font-size: 1.2rem;
+  color: #4ecdc4;
+  font-weight: 600;
 }
 
 .overlay-text {
