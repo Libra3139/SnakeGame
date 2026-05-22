@@ -1002,28 +1002,58 @@ function mpUpdate() {
   tickHistory.push({snake0:{...snake[0]},snake1:snake[1]?{...snake[1]}:null,opp0:{...opponentSnake[0]},opp1:opponentSnake[1]?{...opponentSnake[1]}:null,dir:{...direction},odir:{...opponentDirection},iq:inputQueue.length,giq:guestInputQueue.length,foodsLen:foods.length,score:score.value,oppScore:opponentScore})
   if (tickHistory.length > 30) tickHistory.shift()
 
+  if (direction.x === 0 && direction.y === 0) {
+    console.warn('mpUpdate forced host direction reset (was zero)')
+    direction = { x: 1, y: 0 }
+  }
+  if (opponentDirection.x === 0 && opponentDirection.y === 0) {
+    console.warn('mpUpdate forced opponent direction reset (was zero)')
+    opponentDirection = { x: -1, y: 0 }
+  }
+
   const hostHead = { x: snake[0].x + direction.x, y: snake[0].y + direction.y }
   const guestHead = { x: opponentSnake[0].x + opponentDirection.x, y: opponentSnake[0].y + opponentDirection.y }
 
   let hostAlive = true
   let guestAlive = true
+  let hostCause = ''
+  let guestCause = ''
 
-  if (hostHead.x < 0 || hostHead.x >= gs || hostHead.y < 0 || hostHead.y >= gs) { hostAlive = false }
-  else if (snake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) { hostAlive = false }
-  else if (myObstacles.some(o => o.x === hostHead.x && o.y === hostHead.y)) { hostAlive = false }
+  if (hostHead.x < 0 || hostHead.x >= gs || hostHead.y < 0 || hostHead.y >= gs) { hostAlive = false; hostCause = `wall (head=${JSON.stringify(hostHead)},gs=${gs})` }
+  else if (snake.some(seg => seg.x === hostHead.x && seg.y === hostHead.y)) { hostAlive = false; hostCause = `self-collision (head=${JSON.stringify(hostHead)})` }
+  else if (myObstacles.some(o => o.x === hostHead.x && o.y === hostHead.y)) { hostAlive = false; hostCause = `rock at (${hostHead.x},${hostHead.y})` }
 
-  if (guestHead.x < 0 || guestHead.x >= gs || guestHead.y < 0 || guestHead.y >= gs) { guestAlive = false }
-  else if (opponentSnake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) { guestAlive = false }
-  else if (opponentObstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) { guestAlive = false }
+  if (guestHead.x < 0 || guestHead.x >= gs || guestHead.y < 0 || guestHead.y >= gs) { guestAlive = false; guestCause = `wall (head=${JSON.stringify(guestHead)},gs=${gs})` }
+  else if (opponentSnake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) { guestAlive = false; guestCause = `self-collision (head=${JSON.stringify(guestHead)})` }
+  else if (opponentObstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) { guestAlive = false; guestCause = `rock at (${guestHead.x},${guestHead.y})` }
 
   if (hostHead.x === guestHead.x && hostHead.y === guestHead.y) {
     hostAlive = false
     guestAlive = false
+    hostCause = `head-on with guest at (${hostHead.x},${hostHead.y})`
+    guestCause = `head-on with host at (${guestHead.x},${guestHead.y})`
   }
 
-  if (!hostAlive && !guestAlive) { console.warn('death both',{hostHead,guestHead,dir:direction,odir:opponentDirection,snake:snake.map(s=>({...s})),opp:opponentSnake.map(s=>({...s})),obs:myObstacles,oobs:opponentObstacles,history:tickHistory}); endMpRound(-1); return }
-  if (!hostAlive) { console.warn('death host',{hostHead,dir:direction,snake:snake.map(s=>({...s})),obs:myObstacles,history:tickHistory}); endMpRound(1 - playerIndex.value); return }
-  if (!guestAlive) { console.warn('death guest',{guestHead,odir:opponentDirection,opp:opponentSnake.map(s=>({...s})),oobs:opponentObstacles,history:tickHistory}); endMpRound(playerIndex.value); return }
+  if (!hostAlive || !guestAlive) {
+    console.warn('DEATH', {
+      tick: tickHistory.length,
+      hostAlive, hostCause,
+      guestAlive, guestCause,
+      hostHead, guestHead,
+      dir: { ...direction },
+      odir: { ...opponentDirection },
+      snake: snake.map(s => ({ ...s })),
+      opp: opponentSnake.map(s => ({ ...s })),
+      myObstacles: myObstacles.map(o => ({ ...o })),
+      opponentObstacles: opponentObstacles.map(o => ({ ...o })),
+      pendingRocks: pendingRocks.map(p => ({ x: p.x, y: p.y })),
+      gs,
+      history: tickHistory,
+    })
+  }
+  if (!hostAlive && !guestAlive) { endMpRound(-1); return }
+  if (!hostAlive) { endMpRound(1 - playerIndex.value); return }
+  if (!guestAlive) { endMpRound(playerIndex.value); return }
 
   snake.unshift(hostHead)
   opponentSnake.unshift(guestHead)
@@ -1290,7 +1320,7 @@ function startGame() {
 }
 
 function handleKeydown(e) {
-  if (gameStatus.value !== "playing") {
+  if (gameStatus.value !== "playing" && !(gameStatus.value === "countdown" && isMultiplayer.value)) {
     if ((e.key === " " || e.key === "Enter") && gameStatus.value === "idle") {
       e.preventDefault()
       startGame()
@@ -1449,6 +1479,7 @@ function setupMultiplayer() {
       }
     } else if (data.type === 'input') {
       if (props.mode === 'host') {
+        if (!data.direction || (data.direction.x === 0 && data.direction.y === 0)) return
         const lastDir = guestInputQueue.length > 0 ? guestInputQueue[guestInputQueue.length - 1] : opponentDirection
         if (data.direction.x !== -lastDir.x || data.direction.y !== -lastDir.y) {
           if (guestInputQueue.length < 2) {
@@ -1491,12 +1522,20 @@ function setupMultiplayer() {
 
   multiplayer.onDisconnect(() => {
     if (gameStatus.value === 'playing' || gameStatus.value === 'ready' || gameStatus.value === 'countdown' || gameStatus.value === 'match_over') {
-      gameWinner = 1 - playerIndex.value
-      gameStatus.value = 'gameover'
-      if (countdownTimer) clearInterval(countdownTimer)
-      if (animFrameId) cancelAnimationFrame(animFrameId)
-      animFrameId = null
-      draw()
+      console.warn('onDisconnect fired, gameStatus=' + gameStatus.value + ' — waiting 3s before ending game')
+      setTimeout(() => {
+        if (gameStatus.value === 'playing' || gameStatus.value === 'ready' || gameStatus.value === 'countdown' || gameStatus.value === 'match_over') {
+          console.warn('onDisconnect confirmed — ending game, opponent wins')
+          gameWinner = 1 - playerIndex.value
+          gameStatus.value = 'gameover'
+          if (countdownTimer) clearInterval(countdownTimer)
+          if (animFrameId) cancelAnimationFrame(animFrameId)
+          animFrameId = null
+          draw()
+        } else {
+          console.warn('onDisconnect cancelled — gameStatus changed to ' + gameStatus.value + ' during grace period')
+        }
+      }, 3000)
     }
   })
 
