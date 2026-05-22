@@ -1182,10 +1182,16 @@ function setupMultiplayer() {
   multiplayer.onData((data) => {
     if (data.type === 'obstacle_layout') {
       obstacles = data.obstacles.map(o => ({...o}))
-      if (props.mode === 'guest') {
+      if (props.mode === 'guest' && gameStatus.value !== 'ready') {
         gameStatus.value = 'ready'
       }
       draw()
+    } else if (data.type === 'request_state') {
+      multiplayer.send({
+        type: 'obstacle_layout',
+        obstacles: obstacles.map(o => ({...o})),
+        gridSize: GRID_SIZE.value,
+      })
     } else if (data.type === 'player_state') {
       opponentSnake = data.snake.map(s => ({...s}))
       opponentDirection = { ...data.direction }
@@ -1250,6 +1256,10 @@ function setupMultiplayer() {
       gameStatus.value = 'ready'
       draw()
     })
+  } else {
+    gameStatus.value = 'ready'
+    draw()
+    multiplayer.send({ type: 'request_state' })
   }
 }
 
