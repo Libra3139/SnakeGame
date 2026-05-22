@@ -19,6 +19,8 @@ const peerId = ref('')
 const playerName = ref('')
 const opponentName = ref('')
 const playerListCollapsed = ref(false)
+const activePlayers = ref([])
+let _presenceTimer = null
 const myReady = ref(false)
 const opponentReady = ref(false)
 const countdownValue = ref(5)
@@ -1341,6 +1343,12 @@ function pressReady() {
   checkBothReady()
 }
 
+function refreshActivePlayers() {
+  if (multiplayer.fetchActivePlayers) {
+    activePlayers.value = multiplayer.fetchActivePlayers()
+  }
+}
+
 function startCountdown(count) {
   gameStatus.value = 'countdown'
   countdownValue.value = count
@@ -1514,6 +1522,11 @@ onMounted(() => {
       peerId.value = multiplayer.myPeerId()
     }
     setupMultiplayer()
+    refreshActivePlayers()
+    _presenceTimer = setInterval(() => {
+      multiplayer.updatePlayerPresencePing()
+      refreshActivePlayers()
+    }, 5000)
     return
   }
   loadQTable()
@@ -1529,6 +1542,7 @@ onUnmounted(() => {
   window.removeEventListener("beforeunload", multiplayer.disconnect)
   if (animFrameId) cancelAnimationFrame(animFrameId)
   if (countdownTimer) clearInterval(countdownTimer)
+  if (_presenceTimer) clearInterval(_presenceTimer)
   if (isMultiplayer.value) {
     multiplayer.disconnect()
   }
@@ -1771,12 +1785,19 @@ onUnmounted(() => {
             <span class="pl-name">{{ playerName || ('P' + (playerIndex + 1)) }}</span>
             <span class="pl-tag">You</span>
           </div>
+          <template v-for="p in activePlayers" :key="p.playerUUID">
+            <div v-if="p.playerName !== playerName && p.playerName !== opponentName" class="pl-item pl-other">
+              <span class="pl-dot"></span>
+              <span class="pl-name">{{ p.playerName }}</span>
+            </div>
+          </template>
           <div v-if="opponentName" class="pl-item pl-opponent">
             <span class="pl-dot"></span>
             <span class="pl-name">{{ opponentName }}</span>
+            <span class="pl-tag">Opp</span>
           </div>
-          <div v-else class="pl-item pl-empty">
-            <span class="pl-name">Waiting...</span>
+          <div v-if="activePlayers.length <= 1 && !opponentName" class="pl-item pl-empty">
+            <span class="pl-name">No other players</span>
           </div>
         </div>
       </div>
@@ -2596,6 +2617,10 @@ kbd {
   background: rgba(78, 205, 196, 0.1);
   border: 1px solid rgba(78, 205, 196, 0.25);
 }
+.pl-other {
+  background: rgba(255, 107, 179, 0.08);
+  border: 1px solid rgba(255, 107, 179, 0.2);
+}
 .pl-opponent {
   background: rgba(255, 107, 179, 0.1);
   border: 1px solid rgba(255, 107, 179, 0.25);
@@ -2613,6 +2638,9 @@ kbd {
 }
 .pl-opponent .pl-dot {
   background: #ff6bb3;
+}
+.pl-other .pl-dot {
+  background: #ffaa44;
 }
 .pl-empty .pl-dot {
   background: #555;
