@@ -13,6 +13,7 @@ const isMultiplayer = computed(() => props.mode === 'host' || props.mode === 'gu
 const playerIndex = computed(() => props.mode === 'host' ? 0 : (props.mode === 'guest' ? 1 : 0))
 
 const canvas = ref(null)
+const chatBoxRef = ref(null)
 const score = ref(0)
 const gameStatus = ref("idle")
 const peerId = ref('')
@@ -20,6 +21,9 @@ const playerName = ref('')
 const opponentName = ref('')
 const playerListCollapsed = ref(false)
 const activePlayers = ref([])
+const chatMessages = ref([])
+const chatInput = ref('')
+const chatPanelCollapsed = ref(true)
 let _presenceTimer = null
 const myReady = ref(false)
 const opponentReady = ref(false)
@@ -63,7 +67,7 @@ const gameMode = ref("normal")
 const ATTRACTION_SPEED = 0.3
 const MAX_FOODS = 16
 
-const CANVAS_SIZE = 400
+const CANVAS_SIZE = 500
 
 const GRID_SIZE = computed(() => {
   const opt = boardSizeOptions.find(o => o.value === boardSize.value)
@@ -1349,6 +1353,18 @@ function refreshActivePlayers() {
   }
 }
 
+function sendChat() {
+  const text = chatInput.value.trim()
+  if (!text) return
+  chatMessages.value.push({
+    sender: playerName.value || 'You',
+    text,
+    time: Date.now(),
+  })
+  multiplayer.send({ type: 'chat', sender: playerName.value || 'Me', text })
+  chatInput.value = ''
+}
+
 function startCountdown(count) {
   gameStatus.value = 'countdown'
   countdownValue.value = count
@@ -1471,6 +1487,12 @@ function setupMultiplayer() {
       }
     } else if (data.type === 'rematch_accept') {
       startNewMatch()
+    } else if (data.type === 'chat') {
+      chatMessages.value.push({
+        sender: data.sender,
+        text: data.text,
+        time: Date.now(),
+      })
     }
   })
 
@@ -1521,6 +1543,7 @@ onMounted(() => {
     if (props.mode === 'host') {
       peerId.value = multiplayer.myPeerId()
     }
+    multiplayer.registerPlayerPresence()
     setupMultiplayer()
     refreshActivePlayers()
     _presenceTimer = setInterval(() => {
@@ -1774,30 +1797,57 @@ onUnmounted(() => {
         <p class="current-mode">{{ gameMode === "greedy" ? "Greedy" : currentSpeedLabel }}{{ enableObstacles ? " + Obstacles" : "" }}</p>
       </div>
 
-      <div v-if="isMultiplayer" class="player-list-panel" :class="{ collapsed: playerListCollapsed }">
-        <button class="pl-toggle" @click="playerListCollapsed = !playerListCollapsed">
-          {{ playerListCollapsed ? '◀' : '▶' }}
-        </button>
-        <div v-show="!playerListCollapsed" class="pl-content">
-          <h3>Players</h3>
-          <div class="pl-item pl-you">
-            <span class="pl-dot"></span>
-            <span class="pl-name">{{ playerName || ('P' + (playerIndex + 1)) }}</span>
-            <span class="pl-tag">You</span>
-          </div>
-          <template v-for="p in activePlayers" :key="p.playerUUID">
-            <div v-if="p.playerName !== playerName && p.playerName !== opponentName" class="pl-item pl-other">
+      <div v-if="isMultiplayer" class="right-sidebar">
+        <div class="player-list-panel" :class="{ collapsed: playerListCollapsed }">
+          <button class="pl-toggle" @click="playerListCollapsed = !playerListCollapsed">
+            {{ playerListCollapsed ? '◀' : '▶' }}
+          </button>
+          <div v-show="!playerListCollapsed" class="pl-content">
+            <h3>Players</h3>
+            <div class="pl-item pl-you">
               <span class="pl-dot"></span>
-              <span class="pl-name">{{ p.playerName }}</span>
+              <span class="pl-name">{{ playerName || ('P' + (playerIndex + 1)) }}</span>
+              <span class="pl-tag">You</span>
             </div>
-          </template>
-          <div v-if="opponentName" class="pl-item pl-opponent">
-            <span class="pl-dot"></span>
-            <span class="pl-name">{{ opponentName }}</span>
-            <span class="pl-tag">Opp</span>
+            <template v-for="p in activePlayers" :key="p.playerUUID">
+              <div v-if="p.playerName !== playerName && p.playerName !== opponentName" class="pl-item pl-other">
+                <span class="pl-dot"></span>
+                <span class="pl-name">{{ p.playerName }}</span>
+              </div>
+            </template>
+            <div v-if="opponentName" class="pl-item pl-opponent">
+              <span class="pl-dot"></span>
+              <span class="pl-name">{{ opponentName }}</span>
+              <span class="pl-tag">Opp</span>
+            </div>
+            <div v-if="activePlayers.length <= 1 && !opponentName" class="pl-item pl-empty">
+              <span class="pl-name">No other players</span>
+            </div>
           </div>
-          <div v-if="activePlayers.length <= 1 && !opponentName" class="pl-item pl-empty">
-            <span class="pl-name">No other players</span>
+        </div>
+
+        <div class="chat-panel" :class="{ collapsed: chatPanelCollapsed }">
+          <button class="pl-toggle" @click="chatPanelCollapsed = !chatPanelCollapsed">
+            {{ chatPanelCollapsed ? '◀' : '▶' }}
+          </button>
+          <div v-show="!chatPanelCollapsed" class="pl-content">
+            <h3>Chat</h3>
+            <div class="chat-messages" ref="chatBoxRef">
+              <div v-for="(msg, i) in chatMessages" :key="i" class="chat-msg">
+                <span class="chat-sender">{{ msg.sender }}</span>
+                <span class="chat-text">{{ msg.text }}</span>
+              </div>
+              <div v-if="chatMessages.length === 0" class="chat-empty">No messages yet</div>
+            </div>
+            <div class="chat-input-row">
+              <input
+                v-model="chatInput"
+                class="chat-input"
+                placeholder="Type a message..."
+                @keyup.enter="sendChat"
+              />
+              <button @click="sendChat" class="btn btn-tiny chat-send-btn">Send</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1961,24 +2011,26 @@ onUnmounted(() => {
   flex-direction: row;
   align-items: flex-start;
   justify-content: center;
-  gap: 20px;
+  gap: 16px;
   width: 100%;
-  max-width: 1200px;
-  padding: 0 10px;
+  max-width: 100%;
+  padding: 0 8px;
 }
 
 .game-center {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  gap: 12px;
+  flex: 1;
   min-width: 0;
-  flex-shrink: 1;
 }
 
 .canvas-wrapper {
   max-width: 100%;
   overflow: hidden;
+  display: flex;
+  justify-content: center;
 }
 .canvas-wrapper canvas {
   max-width: 100%;
@@ -2573,15 +2625,100 @@ kbd {
 
 .player-list-panel {
   position: relative;
-  width: clamp(180px, 20vw, 260px);
+  width: 100%;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   backdrop-filter: blur(10px);
   padding: clamp(10px, 2vw, 16px);
   transition: width 0.3s ease, padding 0.3s ease;
-  align-self: flex-start;
   overflow: hidden;
+}
+.player-list-panel.collapsed {
+  width: 40px;
+  padding: 16px 8px;
+}
+
+.right-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: clamp(200px, 18vw, 260px);
   flex-shrink: 0;
+  position: sticky;
+  top: 10px;
+}
+
+.chat-panel {
+  position: relative;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  padding: clamp(10px, 2vw, 16px);
+  transition: width 0.3s ease, padding 0.3s ease;
+  overflow: hidden;
+}
+.chat-panel.collapsed {
+  width: 40px;
+  padding: 16px 8px;
+}
+.chat-messages {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+}
+.chat-sender {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #4ecdc4;
+}
+.chat-text {
+  font-size: 0.85rem;
+  color: #ddd;
+  word-break: break-word;
+}
+.chat-empty {
+  font-size: 0.8rem;
+  color: #666;
+  text-align: center;
+  padding: 20px 0;
+}
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+.chat-input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 0.85rem;
+  outline: none;
+}
+.chat-input:focus {
+  border-color: #4ecdc4;
+}
+.chat-input::placeholder {
+  color: #666;
+}
+.chat-send-btn {
+  padding: 8px 12px !important;
+  font-size: 0.8rem !important;
 }
 .player-list-panel.collapsed {
   width: 40px;
@@ -2678,10 +2815,18 @@ kbd {
     align-items: center;
   }
   .settings-panel,
-  .leaderboard-panel,
-  .player-list-panel {
+  .leaderboard-panel {
     width: min(500px, 92vw);
     align-self: center;
+  }
+  .right-sidebar {
+    flex-direction: row;
+    width: min(500px, 92vw);
+    position: static;
+  }
+  .player-list-panel,
+  .chat-panel {
+    flex: 1;
   }
 }
 
@@ -2703,12 +2848,12 @@ kbd {
     gap: 8px;
     padding: 0 8px;
   }
-  .player-list-panel {
-    width: min(200px, 80vw);
+  .right-sidebar {
+    flex-direction: column;
+    width: min(320px, 92vw);
   }
-  .player-list-panel.collapsed {
-    width: 36px;
-    padding: 12px 4px;
+  .chat-messages {
+    max-height: 120px;
   }
 }
 </style>

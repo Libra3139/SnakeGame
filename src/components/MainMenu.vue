@@ -49,7 +49,6 @@ onUnmounted(() => {
   clearInterval(_roomListTimer)
   clearInterval(_roomPingTimer)
   clearInterval(_presenceTimer)
-  multiplayer.unregisterPlayerPresence()
 })
 
 async function refreshRoomList() {
