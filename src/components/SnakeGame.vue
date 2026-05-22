@@ -592,13 +592,22 @@ function draw(alpha) {
   if (isMultiplayer.value) {
     let drawSnake = snake
     let drawOppSnake = opponentSnake
-    if (props.mode === 'guest' && alpha > 0 && _guestPrevSnake.length > 0 && _guestPrevOppSnake.length > 0) {
-      drawSnake = snake.map((s, i) => i < _guestPrevSnake.length
+    if (alpha > 0) {
+      if (props.mode === 'guest' && _guestPrevSnake.length > 0 && _guestPrevOppSnake.length > 0) {
+        drawSnake = snake.map((s, i) => i < _guestPrevSnake.length
         ? { x: _guestPrevSnake[i].x + (s.x - _guestPrevSnake[i].x) * alpha, y: _guestPrevSnake[i].y + (s.y - _guestPrevSnake[i].y) * alpha }
         : { ...s })
-      drawOppSnake = opponentSnake.map((s, i) => i < _guestPrevOppSnake.length
-        ? { x: _guestPrevOppSnake[i].x + (s.x - _guestPrevOppSnake[i].x) * alpha, y: _guestPrevOppSnake[i].y + (s.y - _guestPrevOppSnake[i].y) * alpha }
-        : { ...s })
+        drawOppSnake = opponentSnake.map((s, i) => i < _guestPrevOppSnake.length
+          ? { x: _guestPrevOppSnake[i].x + (s.x - _guestPrevOppSnake[i].x) * alpha, y: _guestPrevOppSnake[i].y + (s.y - _guestPrevOppSnake[i].y) * alpha }
+          : { ...s })
+      } else if (props.mode === 'host' && prevSnake.length > 0) {
+        drawSnake = snake.map((s, i) => i < prevSnake.length
+          ? { x: prevSnake[i].x + (s.x - prevSnake[i].x) * alpha, y: prevSnake[i].y + (s.y - prevSnake[i].y) * alpha }
+          : { ...s })
+        drawOppSnake = opponentSnake.map((s, i) => i < opponentPrevSnake.length
+          ? { x: opponentPrevSnake[i].x + (s.x - opponentPrevSnake[i].x) * alpha, y: opponentPrevSnake[i].y + (s.y - opponentPrevSnake[i].y) * alpha }
+          : { ...s })
+      }
     }
     drawBoard(ctx, 0, drawSnake, direction, foods, myObstacles, `You (P${playerIndex.value + 1})`,
       { start: { r: 78, g: 205, b: 196 }, end: { r: 26, g: 107, b: 101 } })
@@ -1082,7 +1091,7 @@ function mpUpdate() {
 
   if (hostAte) {
     if (enableObstacles.value) {
-      addMpSingleObstacle('host')
+      addMpSingleObstacle('guest')
     }
     if (gameMode.value === "greedy") placeFood(4)
     else placeFood()
@@ -1092,7 +1101,7 @@ function mpUpdate() {
 
   if (guestAte) {
     if (enableObstacles.value) {
-      addMpSingleObstacle('guest')
+      addMpSingleObstacle('host')
     }
     if (gameMode.value === "greedy") placeFood(4)
     else placeFood()
@@ -1100,7 +1109,7 @@ function mpUpdate() {
     opponentSnake.pop()
   }
 
-  const mpWinScore = gameMode.value === "greedy" ? 1500 : 20
+  const mpWinScore = gameMode.value === "greedy" ? 100 : 20
   if (score.value >= mpWinScore) { endMpRound(playerIndex.value); return }
   if (opponentScore >= mpWinScore) { endMpRound(1 - playerIndex.value); return }
 
@@ -1243,7 +1252,7 @@ function mpHostGameLoop(timestamp) {
     if (gameStatus.value !== "playing") return
     accumulator -= gameInterval.value
   }
-  draw()
+  draw(accumulator / gameInterval.value)
   animFrameId = requestAnimationFrame(mpHostGameLoop)
 }
 
@@ -1699,7 +1708,7 @@ onUnmounted(() => {
           <div v-if="gameStatus === 'ready'" class="overlay">
             <div class="ready-content">
               <p class="ready-title">{{ currentRound === 1 ? 'Opponent Connected!' : 'Round ' + currentRound }}</p>
-              <p class="ready-subtitle">First to {{ gameMode === 'greedy' ? 1500 : 20 }} pts wins the round &bull; Best of {{ WIN_SCORE }}</p>
+              <p class="ready-subtitle">First to {{ gameMode === 'greedy' ? 100 : 20 }} pts wins the round &bull; Best of {{ WIN_SCORE }}</p>
               <div class="match-scores-bar">
                 <span class="msb-item p1-color">{{ matchScore }}</span>
                 <span class="msb-divider">:</span>
@@ -1729,7 +1738,7 @@ onUnmounted(() => {
           <div v-if="gameStatus === 'match_over'" class="overlay">
             <div class="match-over-content">
               <p class="match-over-title">{{ gameWinner === playerIndex.value ? 'YOU WIN!' : 'YOU LOSE' }}</p>
-              <p class="match-over-subtitle">Best of {{ WIN_SCORE }} &bull; {{ gameMode === 'greedy' ? 1500 : 20 }} pts per round</p>
+              <p class="match-over-subtitle">Best of {{ WIN_SCORE }} &bull; {{ gameMode === 'greedy' ? 100 : 20 }} pts per round</p>
               <div class="match-scores">
                 <div class="match-score-item">
                   <span class="match-score-label">You</span>
