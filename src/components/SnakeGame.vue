@@ -936,6 +936,23 @@ function mpUpdate() {
   snake.unshift(hostHead)
   opponentSnake.unshift(guestHead)
 
+  if (gameMode.value === "greedy") {
+    for (const f of foods) {
+      const hx = snake[0].x + 0.5, hy = snake[0].y + 0.5
+      const ox = opponentSnake[0].x + 0.5, oy = opponentSnake[0].y + 0.5
+      const dh2 = (hx - f.x) ** 2 + (hy - f.y) ** 2
+      const dg2 = (ox - f.x) ** 2 + (oy - f.y) ** 2
+      const nearX = dh2 < dg2 ? hx : ox
+      const nearY = dh2 < dg2 ? hy : oy
+      const dx = nearX - f.x, dy = nearY - f.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist > 0.01) {
+        f.x += (dx / dist) * ATTRACTION_SPEED
+        f.y += (dy / dist) * ATTRACTION_SPEED
+      }
+    }
+  }
+
   let hostAte = false
   for (let i = foods.length - 1; i >= 0; i--) {
     if (Math.abs(hostHead.x + 0.5 - foods[i].x) < 0.6 && Math.abs(hostHead.y + 0.5 - foods[i].y) < 0.6) {
@@ -955,9 +972,11 @@ function mpUpdate() {
   }
 
   if (!hostAte) snake.pop()
+  else if (gameMode.value === "greedy") placeFood(4)
   else placeFood()
 
   if (!guestAte) opponentSnake.pop()
+  else if (gameMode.value === "greedy") placeFood(4)
   else placeFood()
 
   multiplayer.send({
@@ -1230,14 +1249,24 @@ function setupMultiplayer() {
   multiplayer.onData((data) => {
     if (data.type === 'obstacle_layout') {
       obstacles = data.obstacles.map(o => ({...o}))
-      if (props.mode === 'guest' && gameStatus.value !== 'ready') {
-        gameStatus.value = 'ready'
+      if (props.mode === 'guest') {
+        if (data.boardSize) boardSize.value = data.boardSize
+        if (data.difficulty) difficulty.value = data.difficulty
+        if (data.enableObstacles !== undefined) enableObstacles.value = data.enableObstacles
+        if (data.gameMode) gameMode.value = data.gameMode
+        if (gameStatus.value !== 'ready') {
+          gameStatus.value = 'ready'
+        }
       }
       draw()
     } else if (data.type === 'request_state') {
       multiplayer.send({
         type: 'obstacle_layout',
         obstacles: obstacles.map(o => ({...o})),
+        boardSize: boardSize.value,
+        difficulty: difficulty.value,
+        enableObstacles: enableObstacles.value,
+        gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
       })
     } else if (data.type === 'game_state') {
@@ -1314,6 +1343,10 @@ function setupMultiplayer() {
       multiplayer.send({
         type: 'obstacle_layout',
         obstacles: obstacles.map(o => ({...o})),
+        boardSize: boardSize.value,
+        difficulty: difficulty.value,
+        enableObstacles: enableObstacles.value,
+        gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
       })
       gameStatus.value = 'ready'
@@ -1520,7 +1553,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="!isMultiplayer" class="settings-panel">
+      <div v-if="!isMultiplayer || (props.mode === 'host' && gameStatus === 'waiting')" class="settings-panel">
         <h3>Settings</h3>
         <div class="setting-group">
           <label>Board Size</label>
@@ -1542,6 +1575,7 @@ onUnmounted(() => {
               v-for="opt in gameModeOptions"
               :key="opt.value"
               @click="gameMode = opt.value"
+              v-show="opt.value !== 'auto'"
               :class="['btn', 'btn-small', { active: gameMode === opt.value }]"
             >
               {{ opt.label }}
