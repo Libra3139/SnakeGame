@@ -684,3 +684,5 @@ export function clearChatMessages() {
   localStorage.removeItem(CHAT_KEY)
   localStorage.removeItem('snake-chat-ts')
 }
+
+clearChatMessages()

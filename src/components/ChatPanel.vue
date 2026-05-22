@@ -44,6 +44,11 @@ function send() {
     if (el) el.scrollTop = el.scrollHeight
   })
 }
+
+function clear() {
+  multiplayer.clearChatMessages()
+  chatMessages.value = []
+}
 </script>
 
 <template>
@@ -53,7 +58,7 @@ function send() {
       <span v-if="collapsed" class="chat-toggle-label">Chat</span>
     </button>
     <div v-show="!collapsed" class="chat-panel">
-      <h3>Chat</h3>
+      <h3>Chat <span class="chat-clear" @click="clear">clear</span></h3>
       <div class="chat-messages" ref="chatBoxRef">
         <div v-for="(msg, i) in chatMessages" :key="msg.id || i" class="chat-msg">
           <span class="chat-sender">{{ msg.sender }}</span>
@@ -152,6 +157,18 @@ function send() {
   margin: 0 0 12px 0;
   font-size: 1rem;
   color: #4ecdc4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.chat-clear {
+  font-size: 0.65rem;
+  color: #666;
+  cursor: pointer;
+  font-weight: 400;
+}
+.chat-clear:hover {
+  color: #ff6b6b;
 }
 .chat-messages {
   max-height: 260px;
