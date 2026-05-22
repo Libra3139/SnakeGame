@@ -372,10 +372,11 @@ function addSingleObstacle() {
     attempts < 100 &&
     (snake.some(seg => seg.x === pos.x && seg.y === pos.y) ||
       foods.some(f => Math.floor(f.x) === pos.x && Math.floor(f.y) === pos.y) ||
-      allObs.some(o => o.x === pos.x && o.y === pos.y))
+      allObs.some(o => o.x === pos.x && o.y === pos.y) ||
+      pendingRocks.some(pr => pr.x === pos.x && pr.y === pos.y))
   )
   if (attempts < 100) {
-    obstacles.push(pos)
+    pendingRocks.push({ x: pos.x, y: pos.y, startTime: Date.now(), target: 'self' })
   }
 }
 
@@ -476,6 +477,7 @@ function initGame() {
   inputQueue = []
   score.value = 0
   obstacles = []
+  pendingRocks = []
   placeFood()
 }
 
@@ -678,6 +680,17 @@ function draw(alpha) {
     }
     return { ...s }
   }) : snake
+
+  const now = Date.now()
+  for (const pr of pendingRocks) {
+    const elapsed = now - pr.startTime
+    const alpha = Math.min(1, Math.max(0.15, elapsed / ROCK_FADE_DURATION))
+    ctx.fillStyle = `rgba(139, 69, 19, ${alpha})`
+    ctx.shadowColor = `rgba(139, 69, 19, ${alpha * 0.5})`
+    ctx.shadowBlur = 5 * alpha
+    ctx.fillRect(pr.x * cellSize + 1, pr.y * cellSize + 1, cellSize - 2, cellSize - 2)
+    ctx.shadowBlur = 0
+  }
 
   obstacles.forEach(obs => {
     ctx.fillStyle = "#8b4513"
@@ -992,6 +1005,14 @@ function update() {
     }
   } else {
     snake.pop()
+  }
+
+  const now = Date.now()
+  for (let i = pendingRocks.length - 1; i >= 0; i--) {
+    if (now - pendingRocks[i].startTime >= ROCK_FADE_DURATION) {
+      obstacles.push({ x: pendingRocks[i].x, y: pendingRocks[i].y })
+      pendingRocks.splice(i, 1)
+    }
   }
 
   if (gameMode.value === "auto") {
