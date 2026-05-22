@@ -89,6 +89,7 @@ const ROCK_FADE_DURATION = 3000
 let seededRandom = null
 let obstaclesActive = false
 let prevSnake = []
+let tickHistory = []
 
 function sp(index) {
   return snake[index]
@@ -998,6 +999,9 @@ function mpUpdate() {
     }
   }
 
+  tickHistory.push({snake0:{...snake[0]},snake1:snake[1]?{...snake[1]}:null,opp0:{...opponentSnake[0]},opp1:opponentSnake[1]?{...opponentSnake[1]}:null,dir:{...direction},odir:{...opponentDirection},iq:inputQueue.length,giq:guestInputQueue.length,foodsLen:foods.length,score:score.value,oppScore:opponentScore})
+  if (tickHistory.length > 30) tickHistory.shift()
+
   const hostHead = { x: snake[0].x + direction.x, y: snake[0].y + direction.y }
   const guestHead = { x: opponentSnake[0].x + opponentDirection.x, y: opponentSnake[0].y + opponentDirection.y }
 
@@ -1017,9 +1021,9 @@ function mpUpdate() {
     guestAlive = false
   }
 
-  if (!hostAlive && !guestAlive) { console.warn('death both',{hostHead,guestHead,dir:direction,odir:opponentDirection,snake:snake.map(s=>({...s})),opp:opponentSnake.map(s=>({...s})),obs:myObstacles,oobs:opponentObstacles}); endMpRound(-1); return }
-  if (!hostAlive) { console.warn('death host',{hostHead,dir:direction,snake:snake.map(s=>({...s})),obs:myObstacles}); endMpRound(1 - playerIndex.value); return }
-  if (!guestAlive) { console.warn('death guest',{guestHead,odir:opponentDirection,opp:opponentSnake.map(s=>({...s})),oobs:opponentObstacles}); endMpRound(playerIndex.value); return }
+  if (!hostAlive && !guestAlive) { console.warn('death both',{hostHead,guestHead,dir:direction,odir:opponentDirection,snake:snake.map(s=>({...s})),opp:opponentSnake.map(s=>({...s})),obs:myObstacles,oobs:opponentObstacles,history:tickHistory}); endMpRound(-1); return }
+  if (!hostAlive) { console.warn('death host',{hostHead,dir:direction,snake:snake.map(s=>({...s})),obs:myObstacles,history:tickHistory}); endMpRound(1 - playerIndex.value); return }
+  if (!guestAlive) { console.warn('death guest',{guestHead,odir:opponentDirection,opp:opponentSnake.map(s=>({...s})),oobs:opponentObstacles,history:tickHistory}); endMpRound(playerIndex.value); return }
 
   snake.unshift(hostHead)
   opponentSnake.unshift(guestHead)
@@ -1160,6 +1164,7 @@ function resetMpRound() {
   opponentPrevSnake = []
   gameWinner = null
   travelingFood = null
+  tickHistory = []
   myObstacles = []
   opponentObstacles = []
   pendingRocks = []
