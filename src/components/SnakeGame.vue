@@ -277,10 +277,12 @@ watch(difficulty, (newVal) => {
     moveSpeed.value = opt.speed
     enableObstacles.value = opt.obstacles
   }
-  if (isMultiplayer.value && props.mode === 'host') {
-    initGame()
-    draw()
-    syncSettingsToGuest()
+  if (gameStatus.value === 'waiting' || gameStatus.value === 'ready') {
+    if (isMultiplayer.value && props.mode === 'host') {
+      initGame()
+      draw()
+      if (gameStatus.value === 'ready') syncSettingsToGuest()
+    }
   }
 })
 
@@ -294,7 +296,19 @@ watch(gameMode, () => {
     initGame()
     draw()
     if (gameMode.value === "auto") startGame()
+  }
+  if (isMultiplayer.value && props.mode === 'host' && gameStatus.value === 'ready') {
     syncSettingsToGuest()
+  }
+})
+
+watch(enableObstacles, () => {
+  if (gameStatus.value === 'waiting' || gameStatus.value === 'ready') {
+    if (isMultiplayer.value && props.mode === 'host') {
+      initGame()
+      draw()
+      if (gameStatus.value === 'ready') syncSettingsToGuest()
+    }
   }
 })
 
@@ -308,14 +322,8 @@ watch(boardSize, () => {
     initGame()
     draw()
     if (gameMode.value === "auto") startGame()
-    syncSettingsToGuest()
   }
-})
-
-watch(enableObstacles, () => {
-  if (isMultiplayer.value && props.mode === 'host') {
-    initGame()
-    draw()
+  if (isMultiplayer.value && props.mode === 'host' && gameStatus.value === 'ready') {
     syncSettingsToGuest()
   }
 })
@@ -539,7 +547,7 @@ function draw(alpha) {
   if (isMultiplayer.value) {
     drawBoard(ctx, 0, snake, direction, foods, obstacles, `You (P${playerIndex.value + 1})`,
       { start: { r: 78, g: 205, b: 196 }, end: { r: 26, g: 107, b: 101 } })
-    drawBoard(ctx, CANVAS_SIZE + 10, opponentSnake, opponentDirection, foods, obstacles, 'Opponent',
+    drawBoard(ctx, CANVAS_SIZE + 30, opponentSnake, opponentDirection, foods, obstacles, 'Opponent',
       { start: { r: 255, g: 107, b: 179 }, end: { r: 180, g: 40, b: 110 } })
 
     const mw = CANVAS_SIZE * 2 + 10
@@ -1274,10 +1282,12 @@ function setupMultiplayer() {
     if (data.type === 'obstacle_layout') {
       obstacles = data.obstacles.map(o => ({...o}))
       if (props.mode === 'guest') {
-        if (data.boardSize) boardSize.value = data.boardSize
-        if (data.difficulty) difficulty.value = data.difficulty
-        if (data.enableObstacles !== undefined) enableObstacles.value = data.enableObstacles
-        if (data.gameMode) gameMode.value = data.gameMode
+        if (gameStatus.value === 'waiting' || gameStatus.value === 'ready' || gameStatus.value === 'idle') {
+          if (data.boardSize) boardSize.value = data.boardSize
+          if (data.difficulty) difficulty.value = data.difficulty
+          if (data.enableObstacles !== undefined) enableObstacles.value = data.enableObstacles
+          if (data.gameMode) gameMode.value = data.gameMode
+        }
         if (gameStatus.value !== 'ready') {
           gameStatus.value = 'ready'
         }
@@ -1486,7 +1496,7 @@ onUnmounted(() => {
 
       <div class="game-center">
         <div class="canvas-wrapper" :class="{ 'canvas-wide': isMultiplayer }">
-          <canvas ref="canvas" :width="isMultiplayer ? CANVAS_SIZE * 2 + 10 : CANVAS_SIZE" :height="CANVAS_SIZE"></canvas>
+          <canvas ref="canvas" :width="isMultiplayer ? CANVAS_SIZE * 2 + 30 : CANVAS_SIZE" :height="CANVAS_SIZE"></canvas>
           <div v-if="gameStatus === 'idle' && !isMultiplayer" class="overlay">
             <p class="overlay-text">Press Space or Click Start</p>
           </div>
