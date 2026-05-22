@@ -1027,13 +1027,6 @@ function mpUpdate() {
   else if (opponentSnake.some(seg => seg.x === guestHead.x && seg.y === guestHead.y)) { guestAlive = false; guestCause = `self-collision (head=${JSON.stringify(guestHead)})` }
   else if (opponentObstacles.some(o => o.x === guestHead.x && o.y === guestHead.y)) { guestAlive = false; guestCause = `rock at (${guestHead.x},${guestHead.y})` }
 
-  if (hostHead.x === guestHead.x && hostHead.y === guestHead.y) {
-    hostAlive = false
-    guestAlive = false
-    hostCause = `head-on with guest at (${hostHead.x},${hostHead.y})`
-    guestCause = `head-on with host at (${guestHead.x},${guestHead.y})`
-  }
-
   if (!hostAlive || !guestAlive) {
     console.warn('DEATH', {
       tick: tickHistory.length,
