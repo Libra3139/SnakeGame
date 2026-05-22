@@ -31,7 +31,7 @@ const opponentMatchScore = ref(0)
 const currentRound = ref(1)
 const rematchRequested = ref(false)
 const opponentRematch = ref(false)
-const WIN_SCORE = 20
+const WIN_SCORE = 5
 let countdownTimer = null
 
 
@@ -1100,6 +1100,10 @@ function mpUpdate() {
     opponentSnake.pop()
   }
 
+  const mpWinScore = gameMode.value === "greedy" ? 1500 : 20
+  if (score.value >= mpWinScore) { endMpRound(playerIndex.value); return }
+  if (opponentScore >= mpWinScore) { endMpRound(1 - playerIndex.value); return }
+
   multiplayer.send({
     type: 'game_state',
     snake: snake.map(s => ({...s})),
@@ -1243,11 +1247,11 @@ function mpHostGameLoop(timestamp) {
   animFrameId = requestAnimationFrame(mpHostGameLoop)
 }
 
-function mpGuestRenderLoop() {
+function mpGuestRenderLoop(timestamp) {
   if (gameStatus.value !== "playing") return
   let alpha = 0
   if (_guestStateTime > 0 && gameInterval.value > 0) {
-    alpha = Math.min(1, (Date.now() - _guestStateTime) / gameInterval.value)
+    alpha = Math.min(1, (timestamp - _guestStateTime) / gameInterval.value)
   }
   draw(alpha)
   animFrameId = requestAnimationFrame(mpGuestRenderLoop)
@@ -1445,7 +1449,7 @@ function setupMultiplayer() {
       if (props.mode === 'guest' && gameStatus.value === 'playing') {
         _guestPrevSnake = snake.map(s => ({...s}))
         _guestPrevOppSnake = opponentSnake.map(s => ({...s}))
-        _guestStateTime = Date.now()
+        _guestStateTime = performance.now()
         snake = data.opponentSnake.map(s => ({...s}))
         direction = { ...data.opponentDirection }
         opponentSnake = data.snake.map(s => ({...s}))
@@ -1695,6 +1699,7 @@ onUnmounted(() => {
           <div v-if="gameStatus === 'ready'" class="overlay">
             <div class="ready-content">
               <p class="ready-title">{{ currentRound === 1 ? 'Opponent Connected!' : 'Round ' + currentRound }}</p>
+              <p class="ready-subtitle">First to {{ gameMode === 'greedy' ? 1500 : 20 }} pts wins the round &bull; Best of {{ WIN_SCORE }}</p>
               <div class="match-scores-bar">
                 <span class="msb-item p1-color">{{ matchScore }}</span>
                 <span class="msb-divider">:</span>
@@ -1724,7 +1729,7 @@ onUnmounted(() => {
           <div v-if="gameStatus === 'match_over'" class="overlay">
             <div class="match-over-content">
               <p class="match-over-title">{{ gameWinner === playerIndex.value ? 'YOU WIN!' : 'YOU LOSE' }}</p>
-              <p class="match-over-subtitle">First to {{ WIN_SCORE }} wins</p>
+              <p class="match-over-subtitle">Best of {{ WIN_SCORE }} &bull; {{ gameMode === 'greedy' ? 1500 : 20 }} pts per round</p>
               <div class="match-scores">
                 <div class="match-score-item">
                   <span class="match-score-label">You</span>
