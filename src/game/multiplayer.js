@@ -4,6 +4,7 @@ let peer = null
 let conn = null
 let _isHost = false
 let _myPeerId = null
+let _myIP = ''
 let _onDataCb = null
 let _onDisconnectCb = null
 let _onConnCb = null
@@ -16,6 +17,21 @@ let _lobbyConn = null
 let _onRoomListCb = null
 let _lobbyCleanupTimer = null
 let _lobbyHeartbeat = null
+
+export async function initIP() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json')
+    const data = await res.json()
+    _myIP = data.ip
+  } catch {
+    _myIP = 'unknown'
+  }
+  return _myIP
+}
+
+export function myIP() {
+  return _myIP
+}
 
 export function startLobby() {
   return new Promise((resolve, reject) => {

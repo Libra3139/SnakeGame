@@ -1,12 +1,14 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import * as multiplayer from '../game/multiplayer.js'
+import { initIP, myIP } from '../game/multiplayer.js'
 
 const emit = defineEmits(['startSingle', 'startMultiplayerHost', 'startMultiplayerGuest', 'back'])
 
 const showMultiplayer = ref(false)
 const roomId = ref('')
 const myPeerId = ref('')
+const myIpAddress = ref('')
 const connecting = ref(false)
 const error = ref('')
 const lobbyMode = ref('')
@@ -15,8 +17,22 @@ const lobbyOnline = ref(false)
 const lobbyStarted = ref(false)
 const fetchingRooms = ref(false)
 
+let _roomListTimer = null
+
 watch(showMultiplayer, async (val) => {
-  if (val) refreshRoomList()
+  clearInterval(_roomListTimer)
+  if (val) {
+    refreshRoomList()
+    _roomListTimer = setInterval(refreshRoomList, 5000)
+  }
+})
+
+onMounted(async () => {
+  myIpAddress.value = await initIP()
+})
+
+onUnmounted(() => {
+  clearInterval(_roomListTimer)
 })
 
 async function refreshRoomList() {
@@ -190,7 +206,8 @@ function stopLobby() {
 
       <div v-if="lobbyMode === 'host' && myPeerId" class="mp-room-id">
         <p>Room ID: <strong>{{ myPeerId }}</strong></p>
-        <p class="mp-hint">Share this ID with your opponent</p>
+        <p>Your IP: <strong class="ip-text">{{ myIpAddress }}</strong></p>
+        <p class="mp-hint">Share Room ID or IP with your opponent</p>
       </div>
 
       <div v-if="error" class="mp-error">{{ error }}</div>
@@ -370,6 +387,12 @@ function stopLobby() {
 .mp-room-id strong {
   color: #4ecdc4;
   font-size: 1.1rem;
+  letter-spacing: 1px;
+}
+
+.mp-room-id .ip-text {
+  color: #ffd700;
+  font-size: 1rem;
   letter-spacing: 1px;
 }
 

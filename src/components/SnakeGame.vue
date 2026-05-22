@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from "vue"
 import * as multiplayer from '../game/multiplayer.js'
+import { initIP, myIP } from '../game/multiplayer.js'
 
 const props = defineProps({
   mode: { type: String, default: 'single' },
@@ -15,6 +16,8 @@ const canvas = ref(null)
 const score = ref(0)
 const gameStatus = ref("idle")
 const peerId = ref('')
+const peerIP = ref('')
+const opponentIP = ref('')
 const myReady = ref(false)
 const opponentReady = ref(false)
 const countdownValue = ref(5)
@@ -1004,6 +1007,13 @@ function mpUpdate() {
     }
   }
 
+  if (hostAte || guestAte) {
+    if (!obstaclesActive && enableObstacles.value) {
+      obstaclesActive = true
+      generateObstacles()
+    }
+  }
+
   if (!hostAte) snake.pop()
   else if (gameMode.value === "greedy") placeFood(4)
   else placeFood()
@@ -1026,7 +1036,7 @@ function mpUpdate() {
 }
 
 function endMpRound(winner) {
-  if (animFrameId) clearInterval(animFrameId)
+  if (animFrameId) cancelAnimationFrame(animFrameId)
   animFrameId = null
 
   if (winner === playerIndex.value) matchScore.value++
@@ -1084,6 +1094,7 @@ function resetMpRound() {
   opponentAlive = true
   opponentPrevSnake = []
   gameWinner = null
+  travelingFood = null
   if (props.mode === 'host') { generateObstacles() }
   placeFood()
   draw()
@@ -1132,6 +1143,27 @@ function gameLoop(timestamp) {
   animFrameId = requestAnimationFrame(gameLoop)
 }
 
+function mpHostGameLoop(timestamp) {
+  if (gameStatus.value !== "playing") return
+  if (!lastTime) lastTime = timestamp
+  const delta = timestamp - lastTime
+  lastTime = timestamp
+  accumulator += delta
+  while (accumulator >= gameInterval.value) {
+    mpUpdate()
+    if (gameStatus.value !== "playing") return
+    accumulator -= gameInterval.value
+  }
+  draw()
+  animFrameId = requestAnimationFrame(mpHostGameLoop)
+}
+
+function mpGuestRenderLoop() {
+  if (gameStatus.value !== "playing") return
+  draw()
+  animFrameId = requestAnimationFrame(mpGuestRenderLoop)
+}
+
 function winGame() {
   if (animFrameId) cancelAnimationFrame(animFrameId)
   animFrameId = null
@@ -1161,12 +1193,15 @@ function startGame() {
     if (props.mode === 'host') {
       gameStatus.value = "playing"
       gameWinner = null
+      lastTime = 0
+      accumulator = 0
       draw()
-      animFrameId = setInterval(() => { mpUpdate(); draw() }, gameInterval.value)
+      animFrameId = requestAnimationFrame(mpHostGameLoop)
     } else {
       gameStatus.value = "playing"
       gameWinner = null
       draw()
+      animFrameId = requestAnimationFrame(mpGuestRenderLoop)
     }
     return
   }
@@ -1278,6 +1313,7 @@ function setupMultiplayer() {
     if (data.type === 'obstacle_layout') {
       obstacles = data.obstacles.map(o => ({...o}))
       if (props.mode === 'guest') {
+        if (data.hostIP) opponentIP.value = data.hostIP
         if (gameStatus.value === 'waiting' || gameStatus.value === 'ready' || gameStatus.value === 'idle') {
           if (data.boardSize) boardSize.value = data.boardSize
           if (data.difficulty) difficulty.value = data.difficulty
@@ -1290,6 +1326,7 @@ function setupMultiplayer() {
       }
       draw()
     } else if (data.type === 'request_state') {
+      if (data.guestIP) opponentIP.value = data.guestIP
       multiplayer.send({
         type: 'obstacle_layout',
         obstacles: obstacles.map(o => ({...o})),
@@ -1298,9 +1335,10 @@ function setupMultiplayer() {
         enableObstacles: enableObstacles.value,
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
+        hostIP: peerIP.value,
       })
     } else if (data.type === 'game_state') {
-      if (props.mode === 'guest') {
+      if (props.mode === 'guest' && gameStatus.value === 'playing') {
         snake = data.opponentSnake.map(s => ({...s}))
         direction = { ...data.opponentDirection }
         opponentSnake = data.snake.map(s => ({...s}))
@@ -1358,10 +1396,7 @@ function setupMultiplayer() {
       gameWinner = 1 - playerIndex.value
       gameStatus.value = 'gameover'
       if (countdownTimer) clearInterval(countdownTimer)
-      if (animFrameId) {
-        if (isMultiplayer.value) clearInterval(animFrameId)
-        else cancelAnimationFrame(animFrameId)
-      }
+      if (animFrameId) cancelAnimationFrame(animFrameId)
       animFrameId = null
       draw()
     }
@@ -1379,6 +1414,7 @@ function setupMultiplayer() {
         enableObstacles: enableObstacles.value,
         gameMode: gameMode.value,
         gridSize: GRID_SIZE.value,
+        hostIP: peerIP.value,
       })
       gameStatus.value = 'ready'
       draw()
@@ -1386,12 +1422,14 @@ function setupMultiplayer() {
   } else {
     gameStatus.value = 'ready'
     draw()
-    multiplayer.send({ type: 'request_state' })
+    multiplayer.send({ type: 'request_state', guestIP: peerIP.value })
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (isMultiplayer.value) {
+    await initIP()
+    peerIP.value = myIP()
     loadQTable()
     loadLeaderboard()
     window.addEventListener("keydown", handleKeydown)
@@ -1413,10 +1451,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown)
   window.removeEventListener("beforeunload", multiplayer.disconnect)
-  if (animFrameId) {
-    if (isMultiplayer.value) clearInterval(animFrameId)
-    else cancelAnimationFrame(animFrameId)
-  }
+  if (animFrameId) cancelAnimationFrame(animFrameId)
   if (countdownTimer) clearInterval(countdownTimer)
   if (isMultiplayer.value) {
     multiplayer.disconnect()
@@ -1431,7 +1466,10 @@ onUnmounted(() => {
 
     <div class="top-bar">
       <div v-if="isMultiplayer" class="multiplayer-info">
-        <div class="mp-player-badge p1-badge">P{{ playerIndex + 1 }} (You)</div>
+        <div class="mp-player-badge p1-badge">
+          P{{ playerIndex + 1 }} (You)
+          <span class="mp-badge-ip">{{ peerIP }}</span>
+        </div>
         <div class="score-board mp-score">
           <div class="score-item">
             <span class="label">You</span>
@@ -1442,7 +1480,10 @@ onUnmounted(() => {
             <span class="value p2-color">{{ opponentScore }}</span>
           </div>
         </div>
-        <div class="mp-player-badge p2-badge">Opponent</div>
+        <div class="mp-player-badge p2-badge">
+          Opponent
+          <span class="mp-badge-ip">{{ opponentIP }}</span>
+        </div>
       </div>
       <div v-else class="score-board">
         <div class="score-item">
@@ -1505,7 +1546,9 @@ onUnmounted(() => {
               <p class="waiting-text">Waiting for opponent...</p>
               <p class="waiting-label">Room ID</p>
               <p class="waiting-id">{{ peerId }}</p>
-              <p class="waiting-hint">Share this ID with your opponent</p>
+              <p class="waiting-label" style="margin-top:8px">Your IP</p>
+              <p class="waiting-id waiting-ip">{{ peerIP || 'Detecting...' }}</p>
+              <p class="waiting-hint">Share Room ID or connect via IP</p>
               <button @click="$emit('back')" class="btn btn-danger waiting-cancel">Cancel</button>
             </div>
           </div>
@@ -1521,11 +1564,13 @@ onUnmounted(() => {
                 <div class="ready-player" :class="{ 'ready-done': myReady }">
                   <span class="ready-icon">{{ myReady ? '✓' : '⋯' }}</span>
                   <span>You</span>
+                  <span class="ready-ip">{{ peerIP || '...' }}</span>
                 </div>
                 <span class="ready-vs">VS</span>
                 <div class="ready-player" :class="{ 'ready-done': opponentReady }">
                   <span class="ready-icon">{{ opponentReady ? '✓' : '⋯' }}</span>
                   <span>Opponent</span>
+                  <span class="ready-ip">{{ opponentIP || '...' }}</span>
                 </div>
               </div>
               <button v-if="!myReady" @click="pressReady" class="btn btn-primary ready-btn">Ready</button>
@@ -2154,6 +2199,11 @@ canvas {
   border: 1px solid rgba(78, 205, 196, 0.3);
 }
 
+.waiting-ip {
+  font-size: 1rem;
+  letter-spacing: 1px;
+}
+
 .waiting-hint {
   font-size: 0.8rem;
   color: #666;
@@ -2307,6 +2357,22 @@ canvas {
 
 .ready-done .ready-icon {
   color: #4ecdc4;
+}
+
+.ready-ip {
+  font-size: 0.65rem;
+  color: #888;
+  font-family: monospace;
+  margin-top: 2px;
+}
+
+.mp-badge-ip {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+  opacity: 0.7;
+  margin-top: 2px;
 }
 
 .ready-vs {
