@@ -84,6 +84,8 @@ let guestInputQueue = []
 let obstacles = []
 let myObstacles = []
 let opponentObstacles = []
+let pendingRocks = []
+const ROCK_FADE_DURATION = 5000
 let seededRandom = null
 let obstaclesActive = false
 let prevSnake = []
@@ -394,10 +396,11 @@ function addMpSingleObstacle(target) {
     attempts < 100 &&
     (tSnake.some(seg => seg.x === pos.x && seg.y === pos.y) ||
       foods.some(f => Math.floor(f.x) === pos.x && Math.floor(f.y) === pos.y) ||
-      tObs.some(o => o.x === pos.x && o.y === pos.y))
+      tObs.some(o => o.x === pos.x && o.y === pos.y) ||
+      pendingRocks.some(pr => pr.x === pos.x && pr.y === pos.y))
   )
   if (attempts < 100) {
-    tObs.push(pos)
+    pendingRocks.push({ x: pos.x, y: pos.y, startTime: Date.now(), target })
   }
 }
 
@@ -458,6 +461,7 @@ function initGame() {
     obstacles = []
     myObstacles = []
     opponentObstacles = []
+    pendingRocks = []
     placeFood()
     return
   }
@@ -475,7 +479,7 @@ function initGame() {
   placeFood()
 }
 
-function drawBoard(ctx, boardX, snakeArr, dirObj, foodArr, obsArr, lbl, colorScheme, offsetSnake) {
+function drawBoard(ctx, boardX, snakeArr, dirObj, foodArr, obsArr, lbl, colorScheme, offsetSnake, pendingArr) {
   const gs = GRID_SIZE.value
   const cs = CELL_SIZE.value
 
@@ -493,6 +497,19 @@ function drawBoard(ctx, boardX, snakeArr, dirObj, foodArr, obsArr, lbl, colorSch
     ctx.moveTo(boardX, i * cs)
     ctx.lineTo(boardX + CANVAS_SIZE, i * cs)
     ctx.stroke()
+  }
+
+  const now = Date.now()
+  if (pendingArr) {
+    for (const pr of pendingArr) {
+      const elapsed = now - pr.startTime
+      const alpha = Math.min(1, Math.max(0.15, elapsed / ROCK_FADE_DURATION))
+      ctx.fillStyle = `rgba(139, 69, 19, ${alpha})`
+      ctx.shadowColor = `rgba(139, 69, 19, ${alpha * 0.5})`
+      ctx.shadowBlur = 5 * alpha
+      ctx.fillRect(boardX + pr.x * cs + 1, pr.y * cs + 1, cs - 2, cs - 2)
+      ctx.shadowBlur = 0
+    }
   }
 
   obsArr.forEach(obs => {
@@ -609,10 +626,12 @@ function draw(alpha) {
           : { ...s })
       }
     }
+    const myBoardPending = pendingRocks.filter(pr => props.mode === 'host' ? pr.target === 'host' : pr.target === 'guest')
+    const oppBoardPending = pendingRocks.filter(pr => props.mode === 'host' ? pr.target === 'guest' : pr.target === 'host')
     drawBoard(ctx, 0, drawSnake, direction, foods, myObstacles, `You (P${playerIndex.value + 1})`,
-      { start: { r: 78, g: 205, b: 196 }, end: { r: 26, g: 107, b: 101 } })
+      { start: { r: 78, g: 205, b: 196 }, end: { r: 26, g: 107, b: 101 } }, null, myBoardPending)
     drawBoard(ctx, CANVAS_SIZE + 30, drawOppSnake, opponentDirection, foods, opponentObstacles, 'Opponent',
-      { start: { r: 255, g: 107, b: 179 }, end: { r: 180, g: 40, b: 110 } })
+      { start: { r: 255, g: 107, b: 179 }, end: { r: 180, g: 40, b: 110 } }, null, oppBoardPending)
 
     const mw = CANVAS_SIZE * 2 + 10
     const w = gameWinner
@@ -1113,6 +1132,16 @@ function mpUpdate() {
   if (score.value >= mpWinScore) { endMpRound(playerIndex.value); return }
   if (opponentScore >= mpWinScore) { endMpRound(1 - playerIndex.value); return }
 
+  const now = Date.now()
+  for (let i = pendingRocks.length - 1; i >= 0; i--) {
+    if (now - pendingRocks[i].startTime >= ROCK_FADE_DURATION) {
+      const pr = pendingRocks[i]
+      if (pr.target === 'host') myObstacles.push({ x: pr.x, y: pr.y })
+      else opponentObstacles.push({ x: pr.x, y: pr.y })
+      pendingRocks.splice(i, 1)
+    }
+  }
+
   multiplayer.send({
     type: 'game_state',
     snake: snake.map(s => ({...s})),
@@ -1124,6 +1153,7 @@ function mpUpdate() {
     guestScore: opponentScore,
     myObstacles: myObstacles.map(o => ({...o})),
     opponentObstacles: opponentObstacles.map(o => ({...o})),
+    pendingRocks: pendingRocks.map(pr => ({ x: pr.x, y: pr.y, startTime: pr.startTime, target: pr.target })),
   })
 }
 
@@ -1190,6 +1220,7 @@ function resetMpRound() {
   tickHistory = []
   myObstacles = []
   opponentObstacles = []
+  pendingRocks = []
   placeFood()
   draw()
 }
@@ -1466,6 +1497,12 @@ function setupMultiplayer() {
         foods = data.foods.map(f => ({...f}))
         myObstacles = data.opponentObstacles.map(o => ({...o}))
         opponentObstacles = data.myObstacles.map(o => ({...o}))
+        if (data.pendingRocks) {
+          pendingRocks = data.pendingRocks.map(pr => ({
+            x: pr.x, y: pr.y, startTime: pr.startTime,
+            target: pr.target === 'host' ? 'guest' : 'host'
+          }))
+        }
         score.value = data.guestScore
         opponentScore = data.hostScore
         draw()
