@@ -423,6 +423,7 @@ function placeFood(count) {
 function initGame() {
   travelingFood = null
   foods = []
+  obstacles = []
   obstaclesActive = false
   prevFoodDist = Infinity
   lastQState = null
@@ -468,7 +469,7 @@ function initGame() {
   nextDirection = { x: 1, y: 0 }
   inputQueue = []
   score.value = 0
-  generateObstacles()
+  obstacles = []
   placeFood()
 }
 
@@ -2765,14 +2766,13 @@ kbd {
 .online-players {
   position: fixed;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 60px;
   background: rgba(0, 0, 0, 0.75);
-  border-radius: 8px 0 0 8px;
+  border-radius: 0 0 0 8px;
   padding: 10px 14px;
   backdrop-filter: blur(6px);
   z-index: 99;
-  max-height: 50vh;
+  max-height: 35vh;
   overflow-y: auto;
   min-width: 180px;
 }

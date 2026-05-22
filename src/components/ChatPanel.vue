@@ -88,11 +88,12 @@ function send() {
   backdrop-filter: blur(12px);
   padding: clamp(14px, 2vw, 20px);
   transition: width 0.3s ease, padding 0.3s ease, bottom 0.3s ease;
-  overflow: hidden;
-  z-index: 100;
   max-height: 50vh;
+  overflow-y: auto;
+  z-index: 200;
 }
 .chat-panel-wrapper.collapsed {
+  overflow: hidden;
   width: 40px;
   height: 40px;
   padding: 12px 8px;

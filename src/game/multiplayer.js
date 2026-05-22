@@ -67,6 +67,12 @@ export function registerLocalRoom(hostPeerId) {
   saveLocalRooms(rooms)
 }
 
+function _lobbySend(data) {
+  if (_lobbyConn && _lobbyConn.conn && _lobbyConn.conn.open) {
+    try { _lobbyConn.conn.send(data) } catch {}
+  }
+}
+
 export function incrementRoomMembers(roomId) {
   const rooms = getLocalRoomsRaw()
   const room = rooms.get(roomId)
@@ -74,6 +80,7 @@ export function incrementRoomMembers(roomId) {
     room.memberCount = (room.memberCount || 1) + 1
     room.timestamp = Date.now()
     saveLocalRooms(rooms)
+    _lobbySend({ type: 'update_member', roomId, memberCount: room.memberCount })
   }
 }
 
@@ -86,6 +93,7 @@ export function decrementRoomMembers(roomId) {
     if (room.memberCount <= 0) {
       rooms.delete(roomId)
     }
+    _lobbySend({ type: 'update_member', roomId, memberCount: room.memberCount })
     saveLocalRooms(rooms)
   }
 }
@@ -186,6 +194,15 @@ export function startLobby() {
               if (room.connPeer === c.peer) { room.lastPing = Date.now(); break }
             }
             c.send({ type: 'pong' })
+            break
+          case 'update_member':
+            for (const room of rooms.values()) {
+              if (room.connPeer === c.peer && room.peerId === data.roomId) {
+                room.memberCount = data.memberCount
+                if (room.memberCount <= 0) { rooms.delete(room.peerId); broadcastRooms() }
+                break
+              }
+            }
             break
           case 'chat':
             for (const [peerId, conn] of _lobbyChatConns) {
