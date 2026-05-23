@@ -31,6 +31,7 @@ const opponentMatchScore = ref(0)
 const currentRound = ref(1)
 const rematchRequested = ref(false)
 const opponentRematch = ref(false)
+const roundWinner = ref(null)
 const WIN_SCORE = 5
 let countdownTimer = null
 
@@ -1206,6 +1207,7 @@ function endMpRound(winner) {
   if (matchScore.value >= WIN_SCORE || opponentMatchScore.value >= WIN_SCORE) {
     endMpMatch(winner)
   } else {
+    roundWinner.value = winner
     currentRound.value++
     gameStatus.value = 'ready'
     myReady.value = false
@@ -1267,6 +1269,7 @@ function acceptRematch() {
 }
 
 function startNewMatch() {
+  roundWinner.value = null
   matchScore.value = 0
   opponentMatchScore.value = 0
   currentRound.value = 1
@@ -1451,6 +1454,7 @@ function refreshActivePlayers() {
 }
 
 function startCountdown(count) {
+  roundWinner.value = null
   gameStatus.value = 'countdown'
   countdownValue.value = count
   draw()
@@ -1557,6 +1561,7 @@ function setupMultiplayer() {
         gameStatus.value = 'match_over'
         draw()
       } else {
+        roundWinner.value = data.winner
         gameStatus.value = 'ready'
         myReady.value = false
         opponentReady.value = false
@@ -1774,7 +1779,11 @@ onUnmounted(() => {
           </div>
           <div v-if="gameStatus === 'ready'" class="overlay">
             <div class="ready-content">
-              <p class="ready-title">{{ currentRound === 1 ? 'Opponent Connected!' : 'Round ' + currentRound }}</p>
+              <p class="ready-title" v-if="roundWinner !== null">
+                <span v-if="roundWinner === playerIndex">You won Round {{ currentRound - 1 }}!</span>
+                <span v-else>{{ opponentName || 'Opponent' }} won Round {{ currentRound - 1 }}</span>
+              </p>
+              <p class="ready-title" v-else>{{ currentRound === 1 ? 'Opponent Connected!' : 'Round ' + currentRound }}</p>
               <p class="ready-subtitle">First to {{ gameMode === 'greedy' ? 100 : 20 }} pts wins the round &bull; Best of {{ WIN_SCORE }}</p>
               <div class="match-scores-bar">
                 <span class="msb-item p1-color">{{ matchScore }}</span>
